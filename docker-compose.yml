@@ -1,0 +1,111 @@
+# Laboratorio: asistente LLM vulnerable a propósito.
+#
+# Redes:
+#   lab     interna (sin salida a Internet): apps, Ollama y arnés.
+#   front   necesaria para publicar los puertos de las apps en 127.0.0.1.
+#   egress  solo la usa ollama-init para descargar los modelos.
+#
+# Uso:
+#   docker compose --profile setup run --rm ollama-init   # una vez, con Internet
+#   docker compose up -d                                  # apps vulnerable (8001) y segura (8002)
+#   docker compose run --rm harness pytest -m llm tests/test_e2e_smoke.py -v
+
+x-model-env: &model-env
+  OLLAMA_BASE_URL: http://ollama:11434
+  LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
+  EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+  LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
+  LLM_BASE_SEED: ${LLM_BASE_SEED:-1000}
+  LLM_NUM_PREDICT: ${LLM_NUM_PREDICT:-512}
+  LLM_NUM_CTX: ${LLM_NUM_CTX:-4096}
+  LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-300}
+
+x-app: &app
+  build: .
+  image: asistente-llm-lab:dev
+  restart: unless-stopped
+  depends_on:
+    ollama:
+      condition: service_healthy
+  networks: [lab, front]
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.12.6}
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [lab]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ollama-init:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.12.6}
+    profiles: [setup]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        ollama serve & until ollama list >/dev/null 2>&1; do sleep 1; done;
+        ollama pull "$${LLM_MODEL}" && ollama pull "$${EMBED_MODEL}" && ollama list
+    environment:
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [egress]
+
+  app-vulnerable:
+    <<: *app
+    environment:
+      <<: *model-env
+      SECURITY_PROFILE: vulnerable
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - data-vulnerable:/data
+
+  app-segura:
+    <<: *app
+    environment:
+      <<: *model-env
+      SECURITY_PROFILE: segura
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - data-segura:/data
+
+  harness:
+    build: .
+    image: asistente-llm-lab:dev
+    profiles: [tools]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      <<: *model-env
+      GIT_SHA: ${GIT_SHA:-unknown}
+    volumes:
+      - ./attacks:/app/attacks
+      - ./results:/app/results
+    networks: [lab]
+    entrypoint: []
+    command: ["pytest", "-m", "llm", "-v"]
+
+networks:
+  lab:
+    internal: true
+  front: {}
+  egress: {}
+
+volumes:
+  ollama-models:
+  data-vulnerable:
+  data-segura:

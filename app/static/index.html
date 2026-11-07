@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TiendaFicticia · Asistente</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">TiendaFicticia <span class="brand-sub">Atención al cliente</span></div>
+    <div id="user-box" class="user-box" hidden>
+      <span id="user-name"></span>
+      <button id="logout-btn" type="button" class="link-btn">Salir</button>
+    </div>
+  </header>
+
+  <p class="lab-warning">Laboratorio académico: esta aplicación es vulnerable a propósito. Datos y clientes ficticios.</p>
+
+  <main>
+    <section id="login-view" class="card">
+      <h1>Iniciar sesión</h1>
+      <form id="login-form">
+        <label>Cliente <input id="login-user" name="customer_id" autocomplete="username" required></label>
+        <label>Contraseña <input id="login-pass" name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Entrar</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="chat-view" class="chat" hidden>
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <form id="chat-form" class="composer">
+        <input id="chat-input" placeholder="Escribí tu consulta…" autocomplete="off" required>
+        <button type="submit">Enviar</button>
+      </form>
+
+      <details class="card review-box">
+        <summary>Dejar una reseña</summary>
+        <form id="review-form">
+          <textarea id="review-text" rows="3" placeholder="¿Qué te pareció el producto?" required></textarea>
+          <button type="submit">Publicar reseña</button>
+          <p id="review-status" class="muted" role="status"></p>
+        </form>
+      </details>
+    </section>
+  </main>
+
+  <script src="/static/chat.js" defer></script>
+</body>
+</html>

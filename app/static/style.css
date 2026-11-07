@@ -1,0 +1,67 @@
+:root {
+  --bg: #f6f5f2;
+  --surface: #ffffff;
+  --ink: #1d1d1b;
+  --muted: #6b6a66;
+  --line: #e2e0da;
+  --accent: #2f5d8a;
+  --accent-ink: #ffffff;
+  --user: #e6eef6;
+  --warn-bg: #fff4d6;
+  --warn-ink: #6a4b00;
+  --error: #a3261c;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+[hidden] { display: none !important; }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; }
+.brand-sub { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.user-box { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+
+.lab-warning {
+  margin: 0; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-ink); font-size: 0.9rem;
+}
+
+main { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+h1 { font-size: 1.25rem; margin: 0 0 16px; }
+
+form label { display: block; margin-bottom: 12px; font-size: 0.95rem; }
+input, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit;
+  background: var(--surface); color: var(--ink);
+}
+button {
+  padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink);
+  font: inherit; cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: default; }
+.link-btn { background: none; color: var(--accent); padding: 0; }
+
+.chat { display: flex; flex-direction: column; gap: 12px; }
+.messages {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  height: 60vh; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-user { align-self: flex-end; background: var(--user); }
+.msg-assistant { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); }
+.msg-system { align-self: center; color: var(--muted); font-size: 0.9rem; }
+
+.composer { display: flex; gap: 8px; }
+.composer input { flex: 1; }
+
+.review-box summary { cursor: pointer; font-weight: 600; }
+.review-box form { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+.error { color: var(--error); min-height: 1.2em; }
+.muted { color: var(--muted); }

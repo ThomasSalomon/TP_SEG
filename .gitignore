@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Entorno local
+.env
+
+# Datos generados en ejecución
+var/
+*.sqlite3
+*.db
+chroma/
+
+# Resultados de pruebas de desarrollo (los finales se versionan en results/final/)
+results/*
+!results/final/
+
+# Herramientas
+.superpowers/
+.idea/
+.vscode/

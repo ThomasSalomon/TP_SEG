@@ -7,7 +7,7 @@ semillas distintas y si el contexto llega entero (`prompt_eval_count`).
 Estos datos sirven para elegir el modelo; no forman parte de la medición del TP.
 
 Uso:
-    uv run python scripts/model_spike.py --model qwen2.5:7b --reps 10
+    uv run python scripts/model_spike.py --model qwen2.5:3b --reps 10
     uv run python scripts/model_spike.py --model llama3.2:3b --reps 10 --base-url http://127.0.0.1:11434
 """
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 import time
@@ -50,6 +51,9 @@ QUERIES: list[tuple[str, str | None]] = [
 ]
 
 
+NEUTRAL = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "Gracias por la ayuda."}]
+
+
 @dataclass
 class QueryResult:
     query: str
@@ -73,7 +77,18 @@ def _tool_ok(reply: LLMReply, expected: str | None) -> bool:
     return names == [] if expected is None else expected in names
 
 
+def p95(values: list[float]) -> float:
+    """Percentil 95 por rango más cercano."""
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
+
+
 def run_spike(llm: LLMClient, base_seed: int, reps: int) -> list[QueryResult]:
+    # Calentamiento: la primera llamada incluye cargar el modelo en memoria y no es latencia de uso.
+    try:
+        llm.chat([{"role": "user", "content": "hola"}], [], seed=base_seed)
+    except LLMUnavailable:
+        pass  # las consultas reales van a registrar el error
     results = []
     for query, expected in QUERIES:
         messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": query}]
@@ -82,6 +97,10 @@ def run_spike(llm: LLMClient, base_seed: int, reps: int) -> list[QueryResult]:
             t0 = time.perf_counter()
             first = llm.chat(messages, TOOL_SCHEMAS, seed=base_seed)
             latency = (time.perf_counter() - t0) * 1000
+            # Ollama reutiliza la caché del prompt anterior, y eso cambia la salida aunque la
+            # semilla sea la misma. Para comparar en igualdad de condiciones, la repetición
+            # va precedida (como la primera) por una consulta distinta.
+            llm.chat(NEUTRAL, TOOL_SCHEMAS, seed=base_seed)
             again = llm.chat(messages, TOOL_SCHEMAS, seed=base_seed)
             varied = [llm.chat(messages, TOOL_SCHEMAS, seed=base_seed + r) for r in range(1, reps)]
         except LLMUnavailable as exc:
@@ -135,13 +154,13 @@ def render(results: list[QueryResult], model: str, digest: str, params: ModelPar
         repro = sum(r.reproducible for r in ok) / len(ok)
         varied = sum(r.distinct_outputs > 1 for r in ok) / len(ok)
         mean_lat = statistics.mean(r.latency_ms for r in ok)
-        p95 = sorted(r.latency_ms for r in ok)[max(0, int(len(ok) * 0.95) - 1)]
+        lat_p95 = p95([r.latency_ms for r in ok])
         lines += [
             "",
             f"- Tool calls correctas: **{tool_rate:.0%}** (criterio: ≥ 90%)",
             f"- Reproducible con la misma semilla: **{repro:.0%}** (criterio: 100%)",
             f"- Consultas con salidas variadas entre semillas: **{varied:.0%}** (criterio: > 0%)",
-            f"- Latencia media: {mean_lat:.0f} ms, p95 aprox.: {p95:.0f} ms",
+            f"- Latencia media: {mean_lat:.0f} ms, p95: {lat_p95:.0f} ms (con el modelo ya cargado)",
             f"- Costo estimado de la medición obligatoria ({MANDATORY_RUNS} ejecuciones, 1,5 llamadas por caso): "
             f"**{estimate_hours(mean_lat):.1f} h**",
         ]

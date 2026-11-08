@@ -13,11 +13,12 @@ emitir reembolso y enviar email simulado. Una sola base de código se comporta c
 - Propuesta: [`docs/Propuesta TPI Seguridad en asistentes con LLM.pdf`](docs/Propuesta%20TPI%20Seguridad%20en%20asistentes%20con%20LLM.pdf)
 - Plan de implementación: [`docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md`](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md)
 - Avances: [`avances.md`](avances.md)
+- **Instalación en otra PC, con las mismas versiones que el resto del grupo:** [`INSTALACION.md`](INSTALACION.md)
 
 ## Requisitos
 
 - Docker Desktop (o Docker Engine con Compose v2).
-- Unos 8 GB de RAM libres para un modelo de 7B en CPU (menos con `llama3.2:3b`).
+- Unos 4 GB de RAM libres para el modelo elegido (`qwen2.5:3b`) en CPU.
 - Para desarrollo sin Docker: Python 3.12 y [uv](https://docs.astral.sh/uv/) (`pip install uv`).
 
 ## Levantar el laboratorio con Docker
@@ -59,11 +60,11 @@ Se pueden cambiar con un archivo `.env` (ver [`.env.example`](.env.example)):
 |---|---|---|
 | `SECURITY_PROFILE` | (obligatoria) | `vulnerable`, `segura`, `solo_filtros`, `solo_v1` … `solo_v5`. Sin ella la app no arranca |
 | `OLLAMA_BASE_URL` | `http://ollama:11434` | Servidor de Ollama |
-| `LLM_MODEL` | `qwen2.5:7b` | Modelo de chat (provisorio hasta cerrar la tarea 2) |
+| `LLM_MODEL` | `qwen2.5:3b` | Modelo de chat (elegido en la tarea 2) |
 | `EMBED_MODEL` | `nomic-embed-text` | Modelo de embeddings |
 | `LLM_TEMPERATURE`, `LLM_BASE_SEED`, `LLM_NUM_PREDICT`, `LLM_NUM_CTX` | 0.7, 1000, 512, 4096 | Parámetros fijados y documentados en [`docs/decisiones/modelo.md`](docs/decisiones/modelo.md) |
 | `DATA_DIR` | `/data` | Base SQLite y colección de Chroma del servicio |
-| `OLLAMA_IMAGE` | `ollama/ollama:0.12.6` | Versión fija de Ollama |
+| `OLLAMA_IMAGE` | `ollama/ollama:0.40.15` | Versión fija de Ollama |
 
 ## Desarrollo local sin Docker
 
@@ -100,6 +101,25 @@ Credenciales ficticias, solo para el laboratorio:
 - `uv run pytest`: tests deterministas, con un modelo falso (`tests/fakes.py`). No necesitan Ollama.
 - `pytest -m llm`: tests con el modelo real. Se ejecutan dentro del contenedor `harness`.
 
+## Arnés de medición
+
+Ejecuta cada ataque contra el modelo real, varias veces, y decide el éxito con oráculos objetivos.
+Corre dentro de la red interna, desde el contenedor `harness`:
+
+```bash
+docker compose run --rm harness python -m attacks.runner --battery tests/data/smoke.yaml --profiles vulnerable,segura --reps 3 --out results/smoke.jsonl
+```
+
+```bash
+docker compose run --rm harness python -m attacks.report results/smoke.jsonl --out results/smoke/
+```
+
+- La semilla de cada repetición es `LLM_BASE_SEED + rep`, igual en todos los perfiles.
+- Si se corta, se vuelve a ejecutar el mismo comando: retoma sin repetir lo hecho y reintenta los errores.
+- Un modelo caído o un timeout cuenta como `error`, fuera del denominador, y no como ataque bloqueado.
+- Para la medición final hay que definir `GIT_SHA` (en PowerShell, `$env:GIT_SHA = git rev-parse HEAD`)
+  y generar el resumen con `--strict --min-valid 50`.
+
 ## Estructura
 
 ```text
@@ -108,7 +128,7 @@ data/kb/      FAQ de la tienda que se cargan en el RAG
 scripts/      model_spike.py (elección del modelo)
 tests/        un archivo de tests por módulo
 docs/         propuesta, plan, decisiones e informe
-attacks/      batería de ataques y arnés (Fase B)
+attacks/      arnés: schema.py, oracles.py, runner.py, records.py, report.py (la batería llega en la Fase C)
 results/      resultados de las mediciones
 ```
 

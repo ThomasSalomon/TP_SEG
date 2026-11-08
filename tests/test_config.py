@@ -51,5 +51,7 @@ def test_model_params_desde_entorno():
 
 
 def test_model_params_usa_valores_por_defecto():
-    p = model_params_from_env({})
-    assert p.model and p.temperature > 0 and p.num_ctx > 0
+    # valores de docs/decisiones/modelo.md
+    assert model_params_from_env({}) == ModelParams(
+        model="qwen2.5:3b", temperature=0.7, base_seed=1000, num_predict=512, num_ctx=4096
+    )

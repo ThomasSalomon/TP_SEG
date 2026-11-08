@@ -58,11 +58,20 @@ class ModelParams:
     num_ctx: int
 
 
-# Valores provisorios hasta cerrar la tarea 2 (docs/decisiones/modelo.md).
+# Valores elegidos en la tarea 2 (docs/decisiones/modelo.md).
 DEFAULT_MODEL_PARAMS = ModelParams(
-    model="qwen2.5:7b", temperature=0.7, base_seed=1000, num_predict=512, num_ctx=4096
+    model="qwen2.5:3b", temperature=0.7, base_seed=1000, num_predict=512, num_ctx=4096
 )
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
+
+# Entorno de referencia, para que todo el grupo trabaje con lo mismo (INSTALACION.md).
+# Lo controla `scripts/verificar_entorno.py`. Un tag de Ollama puede cambiar de contenido con
+# el tiempo; el digest no, por eso se fija el digest y no solo el nombre.
+EXPECTED_OLLAMA_VERSION = "0.40.15"
+MODEL_DIGESTS = {
+    "qwen2.5:3b": "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b",
+    "nomic-embed-text": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+}
 
 
 def model_params_from_env(env: Mapping[str, str]) -> ModelParams:

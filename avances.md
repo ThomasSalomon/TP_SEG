@@ -1,23 +1,111 @@
 # Avances de implementación
 
-**Fecha:** 7 de noviembre de 2026
-**Fase trabajada:** Fase A, sistema base (tareas 1 a 7 del [plan](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md))
-**Estado general:** el código de la Fase A está completo y probado con un modelo falso. Faltan los
-pasos que necesitan el modelo real (Ollama) o Docker en ejecución, y todavía no se hizo ningún commit.
+**Última actualización:** 8 de noviembre de 2026
+**Fases trabajadas:** Fase A, sistema base (tareas 1 a 7), y Fase B, arnés de medición (tareas 8 y 9) del
+[plan](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md).
+**Estado general:** el código de las fases A y B está completo (`uv run pytest` → **201 passed**). El
+modelo quedó elegido (**`qwen2.5:3b`**) y el asistente y el arnés ya funcionaron con el modelo real, usando
+Ollama nativo. Falta la prueba con Docker, y todavía no se hizo ningún commit.
 
-## Resumen
+## ⚠️ Pendientes importantes (bloquean la Fase C)
+
+| # | Pendiente | Tarea del plan | Estado |
+|---|---|---|---|
+| 1 | **Script de elección de modelo** | 2 | ✅ **Hecho en la máquina de desarrollo** (8 de noviembre). Se eligió `qwen2.5:3b`; ver abajo. **Falta repetirlo en la máquina que se use para la medición final**, si es otra |
+| 2 | **Prueba de punta a punta con Docker y Ollama** | 7, paso 4 | 🟡 **A medias.** Con Ollama nativo (sin Docker) ya pasaron la prueba de humo y el arnés con el modelo real. **Falta la parte con Docker**: construir la imagen, levantar las dos versiones con Compose y correr la prueba desde el contenedor `harness`. Docker Desktop no estaba iniciado. Es el punto de control del **martes 10 de noviembre** |
+
+### Resultado de la elección del modelo
+
+Detalle en [`docs/decisiones/modelo.md`](docs/decisiones/modelo.md) y resultados crudos en
+[`docs/decisiones/spike-resultados.md`](docs/decisiones/spike-resultados.md). Máquina: i5-1235U, 7,7 GB de RAM,
+sin GPU dedicada.
+
+| Modelo | Resultado | Qué pasó con el modelo |
+|---|---|---|
+| `llama3.2:3b` | ❌ 60% de tool calls correctas: llama a herramientas en consultas generales | Desinstalado |
+| `qwen2.5:7b` | ❌ unos 3,4 min por llamada; la medición llevaría unas 240 h | Desinstalado (podría servir en una máquina con GPU o 16 GB de RAM) |
+| **`qwen2.5:3b`** | ✅ 100% de tool calls correctas, 5,8 s de latencia media, unas 6,8 h de medición estimada | **Elegido** y puesto como valor por defecto en `app/config.py`, Compose, `.env.example` y el README |
+
+**Hallazgo que cambia el plan:** con Ollama en CPU, **la misma semilla no garantiza la misma salida**. La
+salida depende de la caché de prompts y, aun igualando la caché, hay no determinismo numérico (2 salidas
+distintas en 3 intentos). Esto contradice el ajuste 1 del plan. Consecuencias:
+
+- La reproducibilidad pasa a ser **estadística**: se comparan tasas sobre 50 repeticiones con su intervalo
+  de confianza, no salidas una por una.
+- En la **demo (tarea 17)** una semilla "ganadora" puede no repetir el éxito. Conviene usar ataques con tasa
+  alta, ensayar en la máquina de la presentación y tener el video de respaldo.
+- Hay que declararlo como limitación en el **informe (tarea 16)**.
+
+Arreglos al script durante la medición: la primera llamada ahora calienta el modelo, así la carga no infla
+la latencia; el p95 se calcula por rango más cercano, y antes daba menos que la media; y la prueba de
+reproducibilidad compara las dos llamadas partiendo del mismo estado de caché.
+
+### Prueba con el modelo real, sin Docker
+
+Con Ollama nativo (`OLLAMA_BASE_URL=http://127.0.0.1:11434`):
+
+- `pytest -m llm tests/test_e2e_smoke.py` → **2 passed**: el asistente responde la FAQ de devoluciones
+  ("30 días") y consulta el pedido 1001 con `get_order`.
+- Runner con la batería de humo, `vulnerable` y `segura`, 3 repeticiones → **12 de 12 exitosas, 0 errores**.
+  Tiempo por caso: unos 3,3 s para una FAQ y unos 12 s para una consulta de pedido. Con eso, la medición
+  obligatoria lleva **unas 6 h** (presupuestar 8 a 10 h por los ataques de varios turnos).
+
+### Lo que falta de la prueba con Docker
+
+Comandos, en orden, con Docker Desktop iniciado:
+
+```bash
+docker compose --profile setup run --rm ollama-init
+```
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose run --rm harness pytest -m llm tests/test_e2e_smoke.py -v
+```
+
+```bash
+docker compose run --rm harness python -m attacks.runner --battery tests/data/smoke.yaml --profiles vulnerable,segura --reps 3 --out results/smoke.jsonl
+```
+
+```bash
+docker compose run --rm harness python -m attacks.report results/smoke.jsonl --out results/smoke/
+```
+
+Compose levanta su propio Ollama en un contenedor, y `ollama-init` vuelve a descargar `qwen2.5:3b` y
+`nomic-embed-text` (unos 2,2 GB) en su volumen. Los modelos del Ollama nativo no se reutilizan.
+
+Para repetir la elección del modelo en la máquina de medición:
+
+```bash
+uv run python scripts/model_spike.py --model qwen2.5:3b --reps 10 --out docs/decisiones/spike-resultados.md
+```
+
+### Alternativas si `qwen2.5:3b` deja de servir
+
+Están en [`docs/decisiones/modelo.md`](docs/decisiones/modelo.md). En resumen: `qwen2.5:7b` en una máquina
+del grupo con GPU, `qwen3:4b` o `phi4-mini` en local. Usar una API externa (Groq u otra) o exponer Ollama con
+ngrok contradice la propuesta aprobada (todo local, sin APIs externas ni servicios de terceros) y solo
+debería considerarse con el acuerdo del profesor.
+
+Además, antes de la Fase C el plan pide una **revisión independiente del arnés** (tareas 8 y 9). Todavía
+no se hizo.
+
+## Resumen de la Fase A
 
 | Tarea | Estado | Tests |
 |---|---|---|
 | 1. Proyecto, perfiles y cliente LLM | ✅ Completa | 23 |
-| 2. Elección del modelo | 🟡 Script listo; falta ejecutarlo con Ollama | 4 |
+| 2. Elección del modelo | ✅ `qwen2.5:3b` elegido en la máquina de desarrollo; falta confirmarlo en la de medición | 6 |
 | 3. Base de pedidos y herramientas vulnerables | ✅ Completa | 39 |
 | 4. Base de conocimiento vulnerable (RAG) | ✅ Completa | 12 |
 | 5. Prompts y orquestador | ✅ Completa | 19 |
 | 6. API e interfaz web | ✅ Completa | 29 |
 | 7. Docker Compose de punta a punta | 🟡 Configuración y tests listos; falta probar con Docker y el modelo | 11 (+2 con modelo real) |
 
-**Suite completa:** `uv run pytest` → **137 passed** en unos 20 s, sin Ollama ni Internet.
+**Suite de la Fase A:** 137 tests, sin Ollama ni Internet.
 Los 2 tests marcados `llm` (`tests/test_e2e_smoke.py`) fallan con `LLMUnavailable` porque en esta máquina
 no hay Ollama corriendo, que es lo esperado.
 
@@ -41,15 +129,17 @@ implementó hasta que pasaran.
 - [`tests/fakes.py`](tests/fakes.py): `ScriptedLLM` (`.script`, `.fail_with`, `.calls`), los helpers
   `tool_call` y `text`, y `keyword_embed`, un embedding falso y determinista por palabras clave.
 
-### Tarea 2: elección del modelo (parcial)
+### Tarea 2: elección del modelo
 
 - [`scripts/model_spike.py`](scripts/model_spike.py): con 10 consultas benignas en español (6 con herramienta
   esperada y 4 sin herramienta) mide tool calls correctas, latencia, reproducibilidad con la misma semilla,
   variación con semillas distintas y `prompt_eval_count` frente a los tokens enviados. Además estima las horas
   de la medición obligatoria (2800 ejecuciones). Si Ollama no responde, termina con código 1 y un mensaje claro.
-- [`docs/decisiones/modelo.md`](docs/decisiones/modelo.md): plantilla con los criterios de aceptación
-  definidos **antes** de ver resultados, las tablas a completar y los comandos para ejecutar el script.
-  Los valores actuales están marcados como **provisorios**: no se inventó ninguna medición.
+- [`docs/decisiones/modelo.md`](docs/decisiones/modelo.md): criterios de aceptación definidos **antes** de
+  ver resultados, los candidatos evaluados, la decisión (`qwen2.5:3b`, digest `357c53fb…`), la revisión del
+  criterio de reproducibilidad, el costo confirmado con el runner real y las alternativas.
+- [`docs/decisiones/spike-resultados.md`](docs/decisiones/spike-resultados.md): tablas crudas que generó el
+  script para cada modelo.
 
 ### Tarea 3: base de pedidos y herramientas vulnerables
 
@@ -133,21 +223,87 @@ implementó hasta que pasaran.
 - [`tests/test_e2e_smoke.py`](tests/test_e2e_smoke.py) (marcado `llm`): con el modelo real, responde una FAQ
   y consulta el pedido 1001.
 
-## Pendiente para cerrar la Fase A
+## Fase B: arnés de medición
 
-1. **Tarea 2, pasos 2 a 5:** instalar Ollama (o usar `ollama-init`), ejecutar `scripts/model_spike.py` con
-   `llama3.2:3b` y `qwen2.5:7b` en la máquina más débil y en la de medición, y completar
-   `docs/decisiones/modelo.md`. Es el **punto de control del viernes 6 de noviembre**, que ya está atrasado.
-2. **Tarea 7, paso 4:** con Docker Desktop iniciado, ejecutar:
-   - `docker compose --profile setup run --rm ollama-init`
-   - `docker compose up -d --build`
-   - `docker compose run --rm harness pytest -m llm tests/test_e2e_smoke.py -v`
+| Tarea | Estado | Tests |
+|---|---|---|
+| 8. Batería, oráculos y runner | ✅ Completa (probada con el modelo falso) | 33 |
+| 9. Resumen estadístico | ✅ Completa | 20 |
 
-   Después, comprobar en `http://127.0.0.1:8001` que el asistente responde una FAQ y consulta un pedido.
-   Todavía **no se construyó la imagen**, porque el daemon de Docker no estaba corriendo.
-3. **Confirmar que existe la imagen `ollama/ollama:0.12.6`** (se puede cambiar con `OLLAMA_IMAGE`) y fijar la
-   imagen base de Python a una versión exacta o un digest.
-4. **Commits:** el plan pide un commit por tarea, pero no se hizo ninguno (ver decisiones). Mensajes sugeridos:
+### Tarea 8: batería, oráculos y runner
+
+- [`attacks/schema.py`](attacks/schema.py): `OracleSpec`, `Attack` y `load_battery`, que recibe un archivo
+  YAML o un directorio. **Valida toda la batería antes de ejecutar nada**: oráculo desconocido, `vuln` fuera de
+  V1 a V6 o UTIL, `origin` distinto de `dev` o `heldout`, sesión que no es un cliente existente, `turns`
+  vacío, campos desconocidos o ids duplicados dan `ValueError` al cargar, y no después de horas de medición.
+- [`attacks/oracles.py`](attacks/oracles.py): `Evidence`, el registro `ORACLES` y el decorador `@oracle`,
+  que rechaza nombres duplicados. Registra `reply_contains_any` (ignora mayúsculas y mira todos los turnos)
+  y `tool_succeeded`, que solo cuenta herramientas que el backend dio por buenas. Las tareas 10 a 14
+  registran los oráculos de cada vulnerabilidad con el mismo decorador.
+- [`attacks/runner.py`](attacks/runner.py): `seed_for`, `RunContext`, `run_once`, `run_battery` y el CLI.
+  - Cada repetición usa una **base SQLite nueva**, que se borra al terminar.
+  - La base de conocimiento se arma **una vez por ataque y perfil**, con las `setup_reviews` del ataque
+    cargadas con el perfil que se mide. Las reseñas de un ataque no llegan a otro.
+  - La semilla es `base_seed + rep`, **igual en todos los perfiles**, así la comparación es pareada.
+  - Los ataques de varios turnos comparten historial, como una conversación real.
+  - Si el modelo o los embeddings no responden, la repetición queda como **`error`, no como `blocked`**. Un
+    fallo inesperado del código también queda como `error` (con el detalle), para no perder horas de medición.
+  - Cada registro se escribe y se sincroniza a disco (`fsync`) antes de seguir. Al volver a ejecutar el mismo
+    comando, **retoma sin repetir** lo que ya tiene resultado y **reintenta los errores**.
+  - Recorre repetición por repetición, así un corte deja todos los ataques con una cantidad pareja de
+    repeticiones.
+  - El CLI falla con código 1 si el modelo no está instalado o no responde, y avisa si falta `GIT_SHA`.
+- [`attacks/records.py`](attacks/records.py): `RunRecord` y la lectura del JSONL. Si hay varios registros de
+  la misma repetición, gana el válido más reciente: un reintento reemplaza al error. Tolera una última línea
+  cortada por una interrupción.
+- [`tests/data/smoke.yaml`](tests/data/smoke.yaml): batería de humo con dos tareas de utilidad (FAQ y
+  consulta de pedido) para probar el arnés de punta a punta.
+
+### Tarea 9: resumen estadístico
+
+- [`attacks/report.py`](attacks/report.py): `wilson_interval` (sin dependencias; 0 de 50 da [0%; 7,1%]),
+  `fisher_p` (con `scipy.stats.fisher_exact`, bilateral), `SummaryRow`, `summarize` y el CLI.
+  - Los errores quedan **fuera del denominador** y se informan en su propia columna.
+  - Genera `summary.csv` y `summary.md`, con los ataques `dev` y `heldout` en tablas separadas, la batería
+    de utilidad aparte y una comparación de cada perfil contra `vulnerable` con el p-valor de Fisher.
+  - Lista los valores encontrados de `model`, `model_digest`, `temperature` y `git_sha`, y **avisa si hay
+    más de uno**.
+  - Con `--strict --min-valid 50`, termina con error si algún caso tiene menos repeticiones válidas que el
+    mínimo, si hay `git_sha=unknown` o si hay parámetros mezclados.
+
+### Verificación de la Fase B
+
+Además de los tests, probé el circuito completo, runner → JSONL → resumen, con la batería de humo,
+2 perfiles × 10 repeticiones y un modelo falso que "se cae" cada 7 llamadas:
+
+- El segundo intento reintentó los errores sin repetir lo demás.
+- El error que persistió quedó fuera del denominador (6 de 9 válidas).
+- `--strict --min-valid 10` lo rechazó, como corresponde.
+
+## Instalación para el resto del grupo
+
+[`INSTALACION.md`](INSTALACION.md) es la guía paso a paso para clonar el repo en otra PC y reproducir las
+mismas pruebas: uv 0.13.7, `uv sync --frozen`, Ollama 0.40.15, `qwen2.5:3b` y `nomic-embed-text`, prueba de
+humo con el modelo real, arnés y, si se quiere, Docker. También fija reglas para mantener el trabajo
+consistente y una tabla de problemas frecuentes.
+
+- [`scripts/verificar_entorno.py`](scripts/verificar_entorno.py) controla Python 3.12, la versión de Ollama,
+  los **digests** de los modelos (fijados en `MODEL_DIGESTS`, en `app/config.py`), Docker y el commit. Sale con
+  código 1 si algo obligatorio falla. Tiene 9 tests.
+- La imagen de Ollama en Compose pasó de `0.12.6` a **`0.40.15`**, la misma versión con la que se midió.
+- **Verificado** con una copia limpia del repo, armada solo con los archivos versionados: `uv sync --frozen`,
+  201 tests en verde, "Entorno OK" y prueba de humo con el modelo real (`2 passed`). Las URLs de descarga
+  fijadas en la guía (uv 0.13.7 y Ollama 0.40.15 para Windows y macOS) responden.
+- **Para que el grupo pueda usarla hay que commitear y pushear el estado actual.** En GitHub solo está la
+  fase A, con `qwen2.5:7b` por defecto y sin la guía.
+
+## Otros pendientes
+
+1. **Fijar la imagen base de Python** del Dockerfile a una versión exacta o un digest. La imagen
+   `ollama/ollama:0.40.15` coincide con la versión instalada y su release existe en GitHub, pero todavía no
+   se descargó con Docker.
+2. **Commits:** el plan pide un commit por tarea. La fase A ya está en `origin/main` (commit `adb471b`); la
+   fase B, la elección del modelo y la guía de instalación no están commiteadas. Mensajes sugeridos:
    - `feat: add security profiles and LLM client`
    - `docs: record model selection` (cuando se complete la tarea 2)
    - `feat: add orders database and vulnerable tools`
@@ -155,7 +311,9 @@ implementó hasta que pasaran.
    - `feat: add prompts and tool-calling orchestrator`
    - `feat: add chat API and web interface`
    - `feat: add docker compose lab environment`
-5. **Decisión D1:** asignar los `[Integrante N]` de la sección 3 del plan.
+   - `feat: add attack battery runner and oracle registry`
+   - `feat: add statistical report for attack results`
+3. **Decisión D1:** asignar los `[Integrante N]` de la sección 3 del plan.
 
 ## Decisiones tomadas durante la implementación
 
@@ -194,6 +352,22 @@ la decisión resulta incorrecta.
 14. **El script de la tarea 2 se escribió antes que su test.** El plan no pedía test para ese script; se
     agregó uno después, con el modelo falso.
 
+### Fase B
+
+15. **`RunRecord` está en `attacks/records.py` y no en `runner.py`**, para que el resumen lea los registros
+    sin cargar Chroma ni la app. `runner.py` lo reexporta, así la firma del plan sigue valiendo.
+16. **Al retomar, los errores reintentados se agregan al JSONL**, en lugar de reescribir el archivo, para
+    no arriesgar los datos ante un corte. Al leer, un resultado válido reemplaza a un error de la misma
+    repetición. *Si es incorrecta:* el archivo crudo tiene más líneas que repeticiones; el resumen ya lo
+    resuelve.
+17. **Un fallo inesperado del código también cuenta como `error`**, con su detalle, en lugar de cortar la
+    medición. *Si es incorrecta:* un bug podría pasar desapercibido, pero sale como error en el resumen y
+    `--strict` lo rechaza si deja menos de 50 repeticiones válidas.
+18. **Se acepta `V6`** como vulnerabilidad en la batería, por si se hace la tarea 18 (LLM06).
+19. **Las tasas del resumen usan coma decimal** (por ejemplo, 23,7%), para copiarlas directo al informe.
+20. **La revisión independiente del arnés que pide el plan no se hizo**, porque implica lanzar un subagente
+    y no lo pediste. Queda como pendiente antes de la Fase C.
+
 ## Cómo verificar lo hecho
 
 ```bash
@@ -208,7 +382,7 @@ python -m uv sync
 python -m uv run pytest
 ```
 
-Resultado esperado: `137 passed, 2 deselected`.
+Resultado esperado: `201 passed, 2 deselected`.
 
 ## Archivos creados
 
@@ -222,5 +396,13 @@ docs/decisiones/modelo.md
 scripts/__init__.py  model_spike.py
 tests/__init__.py  conftest.py  fakes.py  test_config.py  test_llm.py  test_db.py  test_tools.py
 tests/test_rag.py  test_orchestrator.py  test_api.py  test_compose.py  test_e2e_smoke.py  test_model_spike.py
-attacks/.gitkeep  results/final/.gitkeep
+results/final/.gitkeep
+```
+
+Fase B:
+
+```text
+attacks/__init__.py  schema.py  oracles.py  records.py  runner.py  report.py
+tests/data/smoke.yaml  tests/test_oracles.py  tests/test_runner.py  tests/test_report.py
+pyproject.toml y uv.lock (se agregó scipy)
 ```

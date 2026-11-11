@@ -1,6 +1,6 @@
 # Avances de implementación
 
-**Última actualización:** 8 de noviembre de 2026
+**Última actualización:** 11 de noviembre de 2026
 **Fases trabajadas:** Fase A, sistema base (tareas 1 a 7), y Fase B, arnés de medición (tareas 8 y 9) del
 [plan](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md).
 **Estado general:** el código de las fases A y B está completo (`uv run pytest` → **201 passed**). El
@@ -12,7 +12,64 @@ Ollama nativo. Falta la prueba con Docker, y todavía no se hizo ningún commit.
 | # | Pendiente | Tarea del plan | Estado |
 |---|---|---|---|
 | 1 | **Script de elección de modelo** | 2 | ✅ **Hecho en la máquina de desarrollo** (8 de noviembre). Se eligió `qwen2.5:3b`; ver abajo. **Falta repetirlo en la máquina que se use para la medición final**, si es otra |
-| 2 | **Prueba de punta a punta con Docker y Ollama** | 7, paso 4 | 🟡 **A medias.** Con Ollama nativo (sin Docker) ya pasaron la prueba de humo y el arnés con el modelo real. **Falta la parte con Docker**: construir la imagen, levantar las dos versiones con Compose y correr la prueba desde el contenedor `harness`. Docker Desktop no estaba iniciado. Es el punto de control del **martes 10 de noviembre** |
+| 2 | **Prueba de punta a punta con Docker y Ollama** | 7, paso 4 | 🟡 **Casi.** El 11 de noviembre se construyó la imagen, se descargaron los modelos con `ollama-init` (digests correctos) y Compose levantó `ollama`, `app-vulnerable` y `app-segura`. Desde `harness`, `test_modelo_instalado` pasa, pero `test_smoke_faq_y_pedido_con_modelo_real` **falla por timeout** (300 s) por falta de RAM. **Se repite en otra máquina con más RAM**; no bloquea empezar la Fase C con Ollama nativo. Ver abajo |
+| 3 | **Revisión independiente del arnés** | punto de control del 10 nov | ✅ **Hecha** el 11 de noviembre. Sin bloqueantes. Ver "Revisión del arnés" |
+
+### Prueba con Docker (11 de noviembre)
+
+Lo que funcionó:
+
+- Imagen `asistente-llm-lab:dev` construida, con la base de Python fijada por digest.
+- `ollama-init` descargó `qwen2.5:3b` (`357c53fb…`) y `nomic-embed-text` (`0a109f42…`). El primer intento se cortó
+  con código 137 (falta de memoria); el segundo terminó bien.
+- Compose levantó las dos versiones en `127.0.0.1:8001` y `127.0.0.1:8002`, con Ollama sano y sin puertos publicados.
+
+Lo que falló y por qué: dentro de Docker, el modelo genera a **0,53 tokens/s** y procesa el prompt a
+**2,5 tokens/s**, unas 20 veces más lento que con Ollama nativo. La máquina de desarrollo tiene 7,7 GB de RAM: con
+Docker Desktop en marcha quedaban 0,9 GB libres, Windows comprimía memoria (1,9 GB) y paginaba la VM de WSL (3,7 GB,
+con 415 MB en swap). Así, el system prompt con las herramientas tarda más que el timeout de 300 s. **No es un error
+del código ni de Compose: falta RAM.**
+
+**Decisión (11 de noviembre):** la prueba con Docker se repite más adelante en **otra máquina con más RAM**
+(16 GB o más, o con GPU), idealmente la misma que se use para la medición final. Mientras tanto, la Fase C se
+desarrolla con Ollama nativo, que en esta máquina sí funciona.
+
+**Para cerrar la tarea 7 en la otra máquina:**
+
+1. Clonar el repo, instalar Docker Desktop e iniciarlo (ver [INSTALACION.md](INSTALACION.md)).
+2. Correr, en orden, los comandos de "Lo que falta de la prueba con Docker" (más abajo). Con GPU NVIDIA, agregar
+   `-f docker-compose.yml -f docker-compose.gpu.yml` a cada `docker compose`.
+3. Verificar que `tests/test_e2e_smoke.py` pasa completo (2 tests) y que el arnés genera `results/smoke/`.
+4. Abrir `http://127.0.0.1:8001` y comprobar que el asistente responde una FAQ y consulta el pedido 1001.
+5. Repetir la elección del modelo en esa máquina (comando al final de esa sección) y anotar aquí los tiempos.
+6. Actualizar el pendiente 2 de la tabla a ✅ y hacer commit de lo que corresponda.
+
+### Revisión del arnés (11 de noviembre)
+
+Revisión independiente de `attacks/`, en solo lectura. Sin bloqueantes. Se resolvieron los dos hallazgos que había que
+cerrar antes de la Fase C:
+
+- **Un corte a mitad de escritura dejaba el JSONL ilegible.** Ahora `run_battery` descarta la línea cortada antes de
+  agregar registros. Lo cubre el test `test_retoma_despues_de_una_escritura_cortada`.
+- **Las semillas de validación coincidían con las de la medición final** (1000 a 1009). Ahora el plan indica validar y
+  ajustar en la Fase C con `LLM_BASE_SEED=9000`.
+
+Quedan para resolver **antes de congelar la batería (tarea 15)**:
+
+- Validar los `args` de cada oráculo al cargar la batería: `values` como texto da falsos positivos.
+- Asegurar que el `git_sha` corresponda al código de la imagen: reconstruir con `--build`, o rechazar la corrida si el
+  árbol de trabajo tiene cambios.
+- Simular en el runner la confirmación de V4, para que el oráculo de utilidad en `segura` no mida mal.
+- Registrar `num_ctx`, `num_predict`, el modelo de embeddings y la versión de Ollama, y controlarlos en `--strict`.
+
+Hallazgos menores:
+
+- `--strict` no detecta perfiles ni ataques faltantes.
+- El historial de errores se pierde.
+- No hay corte cuando Ollama se cae.
+- El docstring del runner dice que la comparación es "pareada", pero Fisher no es pareado.
+- No hay corrección por comparaciones múltiples.
+- El historial del runner no está recortado a 20 mensajes como en la app.
 
 ### Resultado de la elección del modelo
 
@@ -299,9 +356,8 @@ consistente y una tabla de problemas frecuentes.
 
 ## Otros pendientes
 
-1. **Fijar la imagen base de Python** del Dockerfile a una versión exacta o un digest. La imagen
-   `ollama/ollama:0.40.15` coincide con la versión instalada y su release existe en GitHub, pero todavía no
-   se descargó con Docker.
+1. ~~Fijar la imagen base de Python~~ ✅ Fijada el 11 de noviembre a `python:3.12-slim@sha256:5e2bdb1b…`
+   (Python 3.12.16). La imagen `ollama/ollama:0.40.15` ya se descargó y funciona.
 2. **Commits:** el plan pide un commit por tarea. La fase A ya está en `origin/main` (commit `adb471b`); la
    fase B, la elección del modelo y la guía de instalación no están commiteadas. Mensajes sugeridos:
    - `feat: add security profiles and LLM client`
@@ -313,7 +369,8 @@ consistente y una tabla de problemas frecuentes.
    - `feat: add docker compose lab environment`
    - `feat: add attack battery runner and oracle registry`
    - `feat: add statistical report for attack results`
-3. **Decisión D1:** asignar los `[Integrante N]` de la sección 3 del plan.
+3. ~~**Decisión D1:** asignar los `[Integrante N]` de la sección 3 del plan.~~ **Descartada (11 nov):** no se
+   asigna una vulnerabilidad por persona; la Fase C se trabaja en equipo.
 
 ## Decisiones tomadas durante la implementación
 

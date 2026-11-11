@@ -1,4 +1,5 @@
-ARG PYTHON_IMAGE=python:3.12-slim
+# Fijada por digest (python 3.12.16, descargada el 11 de noviembre de 2026) para que la imagen sea reproducible.
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 FROM ${PYTHON_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

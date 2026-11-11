@@ -165,6 +165,16 @@ def test_retoma_sin_repetir(ctx, ataque, tmp_path):
     assert sorted(r["rep"] for r in leer(out)) == [0, 1, 2, 3, 4]
 
 
+def test_retoma_despues_de_una_escritura_cortada(ctx, ataque, tmp_path):
+    out = tmp_path / "r.jsonl"
+    run_battery([ataque], [PROFILES["vulnerable"]], 2, ctx, out)
+    with out.open("a", encoding="utf-8") as f:
+        f.write('{"attack_id": "x", "prof')  # el proceso murió a mitad de un write
+    run_battery([ataque], [PROFILES["vulnerable"]], 4, ctx, out)
+    run_battery([ataque], [PROFILES["vulnerable"]], 5, ctx, out)  # un segundo retome también funciona
+    assert sorted(r.rep for r in read_records(out)) == [0, 1, 2, 3, 4]
+
+
 def test_reintenta_los_errores_al_retomar(make_ctx, ataque, tmp_path):
     out = tmp_path / "r.jsonl"
     run_battery([ataque], [PROFILES["vulnerable"]], 2, make_ctx(ScriptedLLM().fail_with(LLMUnavailable("x"))), out)

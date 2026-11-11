@@ -24,7 +24,7 @@ Estas decisiones cambian el trabajo. Cada una trae una recomendación, y el plan
 
 | # | Decisión | Recomendación | Por qué |
 |---|---|---|---|
-| D1 | ¿Quién toma cada `[Integrante N]`? | Completar la tabla de la sección 3 antes de empezar la tarea 3 | Los integrantes ya están definidos, pero la propuesta no los asigna a las vulnerabilidades |
+| D1 | ~~¿Quién toma cada `[Integrante N]`?~~ | **Descartada (11 nov):** no se asigna una vulnerabilidad por persona; el trabajo es en equipo | Ver sección 3 |
 | D2 | ¿Cómo se entregan las “dos versiones”? | Una base de código con perfiles y dos servicios en Compose | Permite medir cada corrección por separado y evita que dos copias diverjan. Si la cátedra pide dos carpetas o ramas, se cambia la estructura y no el diseño |
 | D3 | ¿Cómo se mide el descuento de V1 si no hay herramienta de descuentos? | Medir dos cosas: reembolsos fuera de política (estado en la base) y promesas de descuento (texto) | La propuesta limita el alcance a tres herramientas, y el backend no puede aplicar una regla sobre algo que el modelo solo dice |
 | D4 | ¿Promptfoo o garak? | promptfoo apuntando a la API HTTP; garak como alternativa si la cobertura local resulta pobre | promptfoo evalúa el sistema completo, con RAG y herramientas, y no solo el modelo |
@@ -61,17 +61,7 @@ Los resúmenes consultados coinciden con los ID que usa la propuesta. **No pude 
 
 ## 3. Responsables y calendario
 
-**Integrantes:** Thomas Salomon Wendler (400501), Tomas Agustín Maccio (400057), Lucas Schoninger (97927), Francisco Torrens Valsagna (401939) y Bruno Salas (400256). Falta decidir quién toma cada rol de esta tabla (D1).
-
-| Integrante | Vulnerabilidad | Parte compartida | Tareas |
-|---|---|---|---|
-| `[Integrante 1]` | V1 Inyección directa | Backend base y arnés | 1, 2, 5, 6, 7, 8, 9, 10, 15 |
-| `[Integrante 2]` | V2 Inyección indirecta | RAG e ingesta | 4, 11 |
-| `[Integrante 3]` | V3 Contexto oculto | Prompts e informe | 5 (prompts), 12, 16 |
-| `[Integrante 4]` | V4 Agencia excesiva | Herramientas y pedidos | 3, 13 |
-| `[Integrante 5]` | V5 Salida sin codificar | Interfaz web | 6 (UI), 14, 17 |
-
-La carga de `[Integrante 1]` es la más alta. Conviene que otro integrante tome la tarea 2 o la 15.
+**Integrantes:** Thomas Salomon Wendler (400501), Tomas Agustín Maccio (400057), Lucas Schoninger (97927), Francisco Torrens Valsagna (401939) y Bruno Salas (400256). **Organización (decidido el 11 de noviembre):** el TP se hace en equipo. No hay una vulnerabilidad asignada a cada integrante: todos pueden trabajar sobre cualquier tarea, y el reparto se acuerda sobre la marcha según disponibilidad. Para evitar pisarse, quien toma una tarea lo avisa al grupo y trabaja en su propia rama; cada cambio lo revisa al menos otro integrante antes de integrarlo.
 
 ```text
 Fase A (base):       1 → 2 → 3 y 4 en paralelo → 5 → 6 → 7
@@ -87,7 +77,7 @@ Opcional:            18, antes de congelar la batería
 |---|---|---|---|
 | Mié 4 a vie 6 nov | Proyecto, roles y elección del modelo | 1, 2 | Roles asignados, modelo elegido y costo de medición calculado |
 | Jue 5 a mar 10 nov | Sistema base y arnés | 3 a 9 | El asistente funciona de punta a punta y el arnés genera un resumen |
-| Mar 10 a sáb 14 nov | Una vulnerabilidad por integrante | 10 a 14 (y 18 si se aprueba) | Cinco ataques validados y cinco correcciones con tests |
+| Mar 10 a sáb 14 nov | Las cinco vulnerabilidades, en equipo | 10 a 14 (y 18 si se aprueba) | Cinco ataques validados y cinco correcciones con tests |
 | Dom 15 nov | Baterías finales y congelamiento | 15, pasos 1 a 5 | Tag `battery-v1` |
 | Dom 15 a lun 16 nov | Medición final y escaneo | 15, pasos 6 a 10 | Resultados en `results/final/` |
 | Mar 17 nov | **Margen** para corregir y repetir la medición | | Resultados definitivos |
@@ -95,7 +85,7 @@ Opcional:            18, antes de congelar la batería
 | Mié 18 a jue 19 nov | Guion, ensayo y video de respaldo | 17 | Demo ensayada sin Internet |
 | **Vie 20 nov** | **Exposición** | | |
 
-Cada integrante puede ir redactando su `vN.md` durante la Fase C: solo la sección de medición depende de los resultados finales. Si la tarea 2 estima más de 24 horas de medición, hay que adelantar el congelamiento o ejecutar de noche desde antes.
+Los `vN.md` se pueden ir redactando durante la Fase C: solo la sección de medición depende de los resultados finales. Si la tarea 2 estima más de 24 horas de medición, hay que adelantar el congelamiento o ejecutar de noche desde antes.
 
 **Puntos de control:**
 
@@ -774,13 +764,15 @@ def test_strict_falla_con_git_sha_unknown(tmp_path):
 
 ---
 
-# Fase C: una vulnerabilidad por integrante
+# Fase C: las cinco vulnerabilidades (trabajo en equipo)
 
 Las cinco tareas se pueden hacer en paralelo y repiten el mismo patrón:
 
 1. Escribir tests deterministas con `ScriptedLLM`, simulando que el modelo ya fue engañado: la vulnerabilidad se ve en `vulnerable` y se bloquea con la corrección.
 2. Implementar el oráculo y la corrección.
-3. Escribir tres ataques `dev` y validarlos con 10 repeticiones contra `vulnerable`.
+3. Escribir tres ataques `dev` y validarlos con 10 repeticiones contra `vulnerable`, **con `LLM_BASE_SEED=9000`** (por ejemplo, `docker compose run --rm -e LLM_BASE_SEED=9000 harness python -m attacks.runner ...`).
+
+> **Semillas (revisión del arnés, 11 de noviembre):** la medición final usa `LLM_BASE_SEED=1000` (semillas 1000 a 1049). Si la validación usara las mismas semillas, los ataques quedarían ajustados a las primeras 10 repeticiones de la medición y la tasa de éxito en `vulnerable` saldría inflada. Por eso la validación y cualquier ajuste se hacen con semillas a partir de 9000.
 
 Si un ataque no tiene éxito, se ajusta **solo contra `vulnerable`**. Si después de ajustarlo la vulnerabilidad sigue sin demostrarse, se documenta y se revisa el diseño: no se fuerza el resultado.
 
@@ -1131,7 +1123,7 @@ def test_cada_vulnerabilidad_tiene_heldout():
 **Consume:** `results/final/summary.md`, `results/final/promptfoo-triage.md`, los marcadores `VULN-Vn` y `FIX-Vn`.
 
 - [ ] **Paso 1: descargar el documento oficial de OWASP 2026** desde la página de la sección de referencias. Confirmar fecha, ID y nombres de la tabla de la sección 2, y corregir la propuesta si algo no coincide.
-- [ ] **Paso 2: escribir cada `vN.md`.** Cada responsable escribe la suya y `[Integrante 3]` consolida. Usar las seis secciones: fundamento técnico, causa raíz en el código, explotación, impacto (CIA), corrección y medición. Incluir la relación con el concepto clásico de la materia (inyección, mínimo privilegio, validación de salida, gestión de secretos). Cada prompt de ataque se documenta junto a su mitigación, como pide la propuesta.
+- [ ] **Paso 2: escribir cada `vN.md`.** Las escribe quien haya trabajado en cada vulnerabilidad y el equipo consolida y revisa el conjunto. Usar las seis secciones: fundamento técnico, causa raíz en el código, explotación, impacto (CIA), corrección y medición. Incluir la relación con el concepto clásico de la materia (inyección, mínimo privilegio, validación de salida, gestión de secretos). Cada prompt de ataque se documenta junto a su mitigación, como pide la propuesta.
 - [ ] **Paso 3: verificar la estructura.** Ejecutar `uv run python -c "import pathlib,sys; s=['Fundamento técnico','Causa raíz','Explotación','Impacto','Corrección','Medición']; m=[(f.name,x) for f in pathlib.Path('docs/informe').glob('v?.md') for x in s if '## '+x not in f.read_text(encoding='utf-8')]; print(m); sys.exit(bool(m))"`. Resultado esperado: imprime `[]`.
 - [ ] **Paso 4: escribir resultados y conclusiones.** Copiar las tablas desde `summary.md`, no transcribir a mano. Incluir tasas con IC 95%, utilidad, `heldout`, comparación entre diseño y filtros, y promptfoo.
 - [ ] **Paso 5: declarar las limitaciones:** un solo modelo pequeño, tasas válidas solo para ese modelo y hardware, batería acotada, ataques en español, disponibilidad no cubierta si se omite la tarea 18, y mitigación parcial de las promesas de texto.

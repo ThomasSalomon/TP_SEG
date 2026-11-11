@@ -124,6 +124,7 @@ def run_battery(attacks: list[Attack], profiles: list[SecurityProfile], reps: in
     """
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    _drop_partial_tail(out)
     done = {r.key() for r in read_raw(out) if r.status != "error"}
     pending = [(rep, a, p) for rep in range(reps) for a in attacks for p in profiles
                if (a.id, p.name, rep) not in done]
@@ -137,6 +138,21 @@ def run_battery(attacks: list[Attack], profiles: list[SecurityProfile], reps: in
             print(f"[{i}/{total}] {attack.id} {profile.name} rep={rep} -> {record.status}"
                   f" ({record.latency_ms} ms){' ' + record.error if record.error else ''}",
                   file=sys.stderr, flush=True)
+
+
+def _drop_partial_tail(path: Path) -> None:
+    """Si un corte dejó la última línea sin terminar, la descarta antes de agregar registros.
+
+    Sin esto, el próximo registro se pega a la línea cortada y el archivo deja de poder leerse.
+    Esa repetición no quedó registrada, así que se vuelve a ejecutar.
+    """
+    if not path.exists():
+        return
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return
+    with path.open("r+b") as f:
+        f.truncate(data.rfind(b"\n") + 1)
 
 
 def _parse_profiles(value: str) -> list[SecurityProfile]:

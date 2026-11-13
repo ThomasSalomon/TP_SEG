@@ -1,0 +1,46 @@
+# Variante para máquinas con poca RAM (por ejemplo, 8 GB).
+#
+# El modelo corre con Ollama instalado en el sistema operativo (fuera de Docker) y en Docker
+# quedan solo las apps y el arnés, que son livianos. Con el docker-compose.yml original, Ollama
+# vive dentro de la VM de Docker Desktop, que en una máquina de 8 GB tiene unos 3,7 GB y termina
+# paginando: el modelo pasa a generar unas 20 veces más lento y se corta por timeout.
+#
+# Requisitos: Ollama nativo (la misma versión y los mismos digests que fija app/config.py),
+# iniciado y con los modelos descargados:
+#   ollama pull qwen2.5:3b
+#   ollama pull nomic-embed-text
+#
+# Uso (los dos -f en cada comando):
+#   docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml run --rm harness pytest -m llm tests/test_e2e_smoke.py -v
+#
+# Limitación (documentada en el informe): las apps y el arnés dejan la red interna `lab`,
+# porque una red interna no tiene ruta al host. Quedan en `front`, que tiene salida a la red.
+# Los puertos se siguen publicando solo en 127.0.0.1.
+#
+# Nota: !reset y !override se escriben en cada servicio porque se pierden si se ponen en un ancla.
+
+services:
+  ollama:
+    profiles: !override [ollama-en-docker]   # no se levanta: se usa el Ollama del host
+
+  app-vulnerable:
+    depends_on: !reset {}
+    networks: !override [front]
+    extra_hosts: ["host.docker.internal:host-gateway"]   # Docker Desktop ya lo define; Linux no
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+  app-segura:
+    depends_on: !reset {}
+    networks: !override [front]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+  harness:
+    depends_on: !reset {}
+    networks: !override [front]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434

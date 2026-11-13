@@ -1,18 +1,18 @@
 # Avances de implementación
 
-**Última actualización:** 11 de noviembre de 2026
+**Última actualización:** 13 de noviembre de 2026
 **Fases trabajadas:** Fase A, sistema base (tareas 1 a 7), y Fase B, arnés de medición (tareas 8 y 9) del
 [plan](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md).
-**Estado general:** el código de las fases A y B está completo (`uv run pytest` → **201 passed**). El
-modelo quedó elegido (**`qwen2.5:3b`**) y el asistente y el arnés ya funcionaron con el modelo real, usando
-Ollama nativo. Falta la prueba con Docker, y todavía no se hizo ningún commit.
+**Estado general:** las fases A y B están completas (`pytest -m "not llm"` → **207 passed**). El modelo
+quedó elegido (**`qwen2.5:3b`**). La prueba de punta a punta con Docker pasó el 13 de noviembre, con Ollama
+nativo y las apps en Docker. Se puede empezar la Fase C.
 
 ## ⚠️ Pendientes importantes (bloquean la Fase C)
 
 | # | Pendiente | Tarea del plan | Estado |
 |---|---|---|---|
 | 1 | **Script de elección de modelo** | 2 | ✅ **Hecho en la máquina de desarrollo** (8 de noviembre). Se eligió `qwen2.5:3b`; ver abajo. **Falta repetirlo en la máquina que se use para la medición final**, si es otra |
-| 2 | **Prueba de punta a punta con Docker y Ollama** | 7, paso 4 | 🟡 **Casi.** El 11 de noviembre se construyó la imagen, se descargaron los modelos con `ollama-init` (digests correctos) y Compose levantó `ollama`, `app-vulnerable` y `app-segura`. Desde `harness`, `test_modelo_instalado` pasa, pero `test_smoke_faq_y_pedido_con_modelo_real` **falla por timeout** (300 s) por falta de RAM. **Se repite en otra máquina con más RAM**; no bloquea empezar la Fase C con Ollama nativo. Ver abajo |
+| 2 | **Prueba de punta a punta con Docker y Ollama** | 7, paso 4 | ✅ **Hecha** el 13 de noviembre con la variante de poca RAM (Ollama nativo y las apps en Docker): prueba de humo 2 de 2 y arnés 12 de 12 desde el contenedor `harness`. Con Ollama dentro de Docker, la notebook de 7,7 GB se cortaba por timeout. Ver abajo |
 | 3 | **Revisión independiente del arnés** | punto de control del 10 nov | ✅ **Hecha** el 11 de noviembre. Sin bloqueantes. Ver "Revisión del arnés" |
 
 ### Prueba con Docker (11 de noviembre)
@@ -30,19 +30,35 @@ Docker Desktop en marcha quedaban 0,9 GB libres, Windows comprimía memoria (1,9
 con 415 MB en swap). Así, el system prompt con las herramientas tarda más que el timeout de 300 s. **No es un error
 del código ni de Compose: falta RAM.**
 
-**Decisión (11 de noviembre):** la prueba con Docker se repite más adelante en **otra máquina con más RAM**
-(16 GB o más, o con GPU), idealmente la misma que se use para la medición final. Mientras tanto, la Fase C se
-desarrolla con Ollama nativo, que en esta máquina sí funciona.
+~~**Decisión (11 de noviembre):** repetir la prueba en otra máquina con más RAM.~~ Se descartó el 13 de noviembre:
+nadie en el grupo tiene una PC con más RAM. Se resolvió con la variante de abajo.
 
-**Para cerrar la tarea 7 en la otra máquina:**
+### Solución: Ollama nativo y las apps en Docker (13 de noviembre)
 
-1. Clonar el repo, instalar Docker Desktop e iniciarlo (ver [INSTALACION.md](INSTALACION.md)).
-2. Correr, en orden, los comandos de "Lo que falta de la prueba con Docker" (más abajo). Con GPU NVIDIA, agregar
-   `-f docker-compose.yml -f docker-compose.gpu.yml` a cada `docker compose`.
-3. Verificar que `tests/test_e2e_smoke.py` pasa completo (2 tests) y que el arnés genera `results/smoke/`.
-4. Abrir `http://127.0.0.1:8001` y comprobar que el asistente responde una FAQ y consulta el pedido 1001.
-5. Repetir la elección del modelo en esa máquina (comando al final de esa sección) y anotar aquí los tiempos.
-6. Actualizar el pendiente 2 de la tabla a ✅ y hacer commit de lo que corresponda.
+Nuevo archivo [`docker-compose.host-ollama.yml`](docker-compose.host-ollama.yml), que se suma al original con un
+segundo `-f`:
+
+- No levanta el `ollama` de Docker (lo pasa a un perfil que no se activa).
+- Las apps y el arnés usan el Ollama nativo de Windows en `http://host.docker.internal:11434`.
+- Las apps y el arnés pasan de la red interna `lab` a `front`, porque una red interna no tiene ruta al host. Es la
+  única pérdida de aislamiento y está documentada en el README como limitación.
+- Ollama nativo sigue escuchando solo en `127.0.0.1`: Docker Desktop llega igual, así que no hubo que exponerlo ni
+  tocar el firewall.
+- Lo cubren 5 tests en [`tests/test_compose_host_ollama.py`](tests/test_compose_host_ollama.py), que validan la
+  configuración combinada por `docker compose config`.
+
+Resultado en la misma notebook de 7,7 GB, con Ollama nativo 0.40.15 y los mismos digests:
+
+- `tests/test_e2e_smoke.py` desde el contenedor `harness`: **2 passed** en 95 s.
+- Arnés de humo (`--reps 3`, dos perfiles) desde `harness`: **12 de 12** casos con éxito, entre 4 y 16 s por caso.
+  El reporte se generó en `results/smoke/`.
+- `app-vulnerable` (8001) y `app-segura` (8002) responden `/health` con su perfil.
+
+Con esto la tarea 7 queda cerrada para la variante de poca RAM. El `docker-compose.yml` original (Ollama dentro de
+Docker) sigue disponible para máquinas con 16 GB o más, pero no se validó en una máquina así.
+
+No se probó el chat a mano en el navegador: la prueba de humo cubre la misma FAQ y la consulta del pedido 1001,
+pero por código, no por la interfaz.
 
 ### Revisión del arnés (11 de noviembre)
 

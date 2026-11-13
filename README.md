@@ -52,6 +52,38 @@ Requiere NVIDIA Container Toolkit. Se suma el override:
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
+### Con poca RAM (8 GB): Ollama nativo y las apps en Docker
+
+Con 8 GB de RAM, Docker Desktop le da unos 3,7 GB a su VM y el modelo no entra cómodo: pagina, genera
+unas 20 veces más lento y se corta por timeout. En ese caso, el modelo corre con Ollama instalado en el
+sistema (fuera de Docker) y en Docker quedan solo las apps y el arnés, que son livianos.
+
+1. Instalar Ollama 0.40.15, iniciarlo y descargar los modelos (ver [INSTALACION.md](INSTALACION.md),
+   pasos 4 y 5):
+
+   ```bash
+   ollama pull qwen2.5:3b
+   ```
+
+   ```bash
+   ollama pull nomic-embed-text
+   ```
+
+2. Levantar las dos versiones con el override:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up -d --build
+   ```
+
+3. Prueba de humo desde el arnés:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml run --rm harness pytest -m llm tests/test_e2e_smoke.py -v
+   ```
+
+En esta variante las apps y el arnés no están en la red interna `lab`, porque una red interna no
+tiene ruta al host (ver "Limitaciones conocidas del entorno").
+
 ### Variables
 
 Se pueden cambiar con un archivo `.env` (ver [`.env.example`](.env.example)):
@@ -147,5 +179,9 @@ corrección con `# FIX-Vn`.
 
 - Las apps están en la red `front` para poder publicar sus puertos, así que conservan salida a la
   red. Ollama y el arnés están solo en la red interna `lab`.
+- Con la variante de poca RAM (`docker-compose.host-ollama.yml`), Ollama corre fuera de Docker y las
+  apps y el arnés pasan a la red `front`, con salida a la red: se pierde el aislamiento de `lab`. Los
+  puertos se siguen publicando solo en `127.0.0.1`, y Ollama nativo escucha por defecto solo en
+  `127.0.0.1` del host.
 - Los resultados de la medición son válidos solo para el modelo, la versión (digest) y el hardware
   usados. La medición final se hace en una sola máquina.

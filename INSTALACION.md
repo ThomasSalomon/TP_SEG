@@ -234,8 +234,27 @@ credenciales ficticias del laboratorio. Para la versión segura, usá `SECURITY_
 
 ## Paso 11 (opcional): laboratorio completo con Docker
 
-> **Todavía no está validado de punta a punta** en ninguna máquina; es un pendiente de la tarea 7. Si lo
-> probás, contale al grupo cómo te fue.
+### Opción A (recomendada con 8 GB de RAM): Ollama nativo y las apps en Docker
+
+Validada el 13 de noviembre de 2026 en una notebook con 7,7 GB de RAM: la prueba de humo pasa en unos
+95 s y el arnés tarda entre 4 y 16 s por caso. Usa el Ollama y los modelos de los pasos 4 y 5, que tienen
+que estar iniciados. Con Docker Desktop iniciado:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up -d --build
+```
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml run --rm harness pytest -m llm tests/test_e2e_smoke.py -v
+```
+
+No hace falta cambiar `OLLAMA_HOST` ni el firewall: Docker Desktop llega al Ollama del host aunque escuche
+solo en `127.0.0.1`.
+
+### Opción B (16 GB de RAM o más, o GPU): todo dentro de Docker
+
+> Con 8 GB de RAM **no funciona**: el modelo dentro de la VM de Docker se corta por timeout (ver
+> [avances.md](avances.md)).
 
 Compose levanta su propio Ollama (`ollama/ollama:0.40.15`) en una red interna, con las dos versiones del
 asistente. Los modelos se vuelven a descargar dentro de un volumen de Docker; no se reutilizan los del

@@ -21,6 +21,7 @@ import chromadb
 from chromadb.config import Settings
 
 from app.config import SecurityProfile
+from app.ingest import sanitize_review
 
 Embedder = Callable[[list[str]], list[list[float]]]
 
@@ -93,8 +94,14 @@ class KnowledgeBase:
     def add_review(self, text: str, profile: SecurityProfile) -> IngestResult:
         if not text or not text.strip():
             return IngestResult(False, "empty")
-        # VULN-V2: la reseña se guarda tal cual, sin validar ni limpiar. Si contiene
-        # instrucciones (aunque estén ocultas en comentarios HTML o caracteres
+        if profile.fix_v2:
+            # FIX-V2 (capa adicional): se quita el contenido oculto y se rechazan las reseñas
+            # con instrucciones, enlaces o emails. El control principal está en el orquestador.
+            text, reason = sanitize_review(text)
+            if reason is not None:
+                return IngestResult(False, reason)
+        # VULN-V2: sin la corrección, la reseña se guarda tal cual, sin validar ni limpiar.
+        # Si contiene instrucciones (aunque estén ocultas en comentarios HTML o caracteres
         # invisibles), llegan al modelo cuando se recupera.
         doc_id = f"review-{uuid.uuid4().hex[:12]}"
         self._add([doc_id], [text], "review", [doc_id])

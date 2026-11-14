@@ -170,7 +170,7 @@ corrección con `# FIX-Vn`.
 | Vulnerabilidad | OWASP LLM 2026 | Dónde vive |
 |---|---|---|
 | V1 Inyección directa | LLM01 | `app/prompts.py` (reglas solo en el prompt), `app/tools.py` |
-| V2 Inyección indirecta | LLM01 / LLM09 | `app/rag.py` (ingesta sin validar), `app/prompts.py` (contexto sin delimitar) |
+| V2 Inyección indirecta | LLM01 / LLM09 | `app/rag.py` (ingesta sin validar), `app/prompts.py` (contexto sin delimitar), `app/orchestrator.py` (todas las herramientas con una reseña en el contexto). Corrección: `allowed_tools` en `app/orchestrator.py`, `app/ingest.py` |
 | V3 Exposición del contexto oculto | LLM08 / LLM02 | `app/prompts.py` (código y regla interna en el system prompt) |
 | V4 Agencia excesiva | LLM03 | `app/tools.py` (sin autorización por sesión ni confirmación) |
 | V5 Salida sin codificar | LLM10 | `app/static/chat.js` (`innerHTML`), `app/main.py` |

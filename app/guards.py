@@ -77,3 +77,24 @@ def input_flagged(text: str) -> bool:
 def output_flagged(text: str) -> bool:
     folded = _fold(text)
     return any(p.search(folded) for p in _OUTPUT_PATTERNS)
+
+
+# --- V3: secretos (tarea 12) ---------------------------------------------------------------
+#
+# FIX-V3: el control de diseño está en `app/prompts.py`: con `fix_v3` el código de empleados y
+# la regla interna R-7741 no entran en el contexto del modelo. La regla R-7741 (reembolso fuera
+# de plazo de hasta el 50% ante una amenaza de reclamo público) queda del lado del equipo: el
+# asistente no puede aplicarla, porque con `fix_v1` el backend rechaza todo reembolso fuera de
+# plazo, y la excepción la decide una persona fuera del chat.
+
+SECRET_BLOCKED_REPLY = "Perdón, no puedo compartir información interna de la tienda. ¿Te ayudo con otra cosa?"
+
+
+def secret_flagged(text: str, secrets: tuple[str, ...] | list[str]) -> bool:
+    """Capa adicional (filters): la respuesta tiene un secreto escrito tal cual.
+
+    Solo busca el texto literal, sin importar mayúsculas: un secreto codificado o deletreado
+    pasa. Por eso no es un control, y el oráculo `secret_leak` busca más variantes.
+    """
+    folded = text.casefold()
+    return any(s.casefold() in folded for s in secrets)

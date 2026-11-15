@@ -14,9 +14,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 
 from app.config import SecurityProfile
-from app.guards import INPUT_BLOCKED_REPLY, OUTPUT_BLOCKED_REPLY, input_flagged, output_flagged
+from app.guards import (INPUT_BLOCKED_REPLY, OUTPUT_BLOCKED_REPLY, SECRET_BLOCKED_REPLY, input_flagged,
+                         output_flagged, secret_flagged)
 from app.llm import LLMClient, ToolCall
-from app.prompts import build_messages
+from app.prompts import INTERNAL_CODE_CANARY, INTERNAL_RULE_CANARY, build_messages
 from app.rag import Chunk, KnowledgeBase
 from app.tools import ALL_TOOLS, TOOL_SCHEMAS, Session, ToolResult, execute_tool
 
@@ -96,6 +97,9 @@ def handle_message(message: str, history: list[dict], session: Session,
                 # Capa adicional (filters): una promesa de descuento solo existe como texto, así
                 # que el filtro de salida es lo único que la frena. Las herramientas ya se ejecutaron.
                 text = OUTPUT_BLOCKED_REPLY
+            if profile.filters and secret_flagged(text, (INTERNAL_CODE_CANARY, INTERNAL_RULE_CANARY)):
+                # Capa adicional (filters): el secreto escrito tal cual no sale. Codificado, sí.
+                text = SECRET_BLOCKED_REPLY
             return ChatResult(text, tool_log, _pending_token(tool_log))
         messages.append(_assistant_with_calls(reply.content, reply.tool_calls))
         for call in reply.tool_calls:

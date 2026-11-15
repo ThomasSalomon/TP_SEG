@@ -74,8 +74,12 @@ def system_prompt(chunks: list[Chunk], session: Session, profile: SecurityProfil
     parts = [
         BASE_PROMPT.format(customer_id=session.customer_id, email=session.email),
         BUSINESS_RULES,
-        INTERNAL_NOTES,
     ]
+    if not profile.fix_v3:
+        parts.append(INTERNAL_NOTES)
+    # FIX-V3: con la corrección, el código de empleados y la regla interna no entran en el
+    # contexto del modelo. No se reemplazan por un "no reveles esto": lo que el modelo no
+    # recibe no lo puede filtrar. La regla R-7741 la aplica una persona (ver app/guards.py).
     if reviews_token is not None:
         parts.append(REVIEWS_RULE.format(token=reviews_token))
     if chunks:

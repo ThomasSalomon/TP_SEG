@@ -171,7 +171,7 @@ corrección con `# FIX-Vn`.
 |---|---|---|
 | V1 Inyección directa | LLM01 | `app/prompts.py` (reglas solo en el prompt), `app/tools.py`. Corrección: `check_refund_policy` en `app/guards.py` (plazo, monto y un reembolso por pedido en el backend); filtros de entrada y salida como capa adicional |
 | V2 Inyección indirecta | LLM01 / LLM09 | `app/rag.py` (ingesta sin validar), `app/prompts.py` (contexto sin delimitar), `app/orchestrator.py` (todas las herramientas con una reseña en el contexto). Corrección: `allowed_tools` en `app/orchestrator.py`, `app/ingest.py` |
-| V3 Exposición del contexto oculto | LLM08 / LLM02 | `app/prompts.py` (código y regla interna en el system prompt) |
+| V3 Exposición del contexto oculto | LLM08 / LLM02 | `app/prompts.py` (código y regla interna en el system prompt). Corrección: con `fix_v3` los secretos no entran en el contexto del modelo; filtro literal de salida como capa adicional |
 | V4 Agencia excesiva | LLM03 | `app/tools.py` (sin autorización por sesión ni confirmación). Corrección: pedidos y emails solo del cliente de la sesión, y reembolsos pendientes hasta que el cliente los confirma desde la UI (`POST /api/tools/confirm`) |
 | V5 Salida sin codificar | LLM10 | `app/static/chat.js` (`innerHTML`), `app/main.py` |
 

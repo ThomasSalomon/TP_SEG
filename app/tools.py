@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.config import SecurityProfile
+from app.guards import check_refund_policy
 from app.llm import ToolCall
 
 
@@ -138,11 +139,9 @@ def _check_keys(args: dict, required: set[str]) -> None:
         raise _Invalid
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
 
-
-def _get_order(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile) -> ToolResult:
+def _get_order(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile,
+               now: datetime) -> ToolResult:
     _check_keys(args, {"order_id"})
     order_id = _order_id(args["order_id"])
     row = conn.execute(
@@ -172,24 +171,37 @@ def _get_order(args: dict, session: Session, conn: sqlite3.Connection, profile: 
     })
 
 
-def _issue_refund(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile) -> ToolResult:
+def _issue_refund(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile,
+                  now: datetime) -> ToolResult:
     _check_keys(args, {"order_id", "amount"})
     order_id = _order_id(args["order_id"])
     amount = _amount(args["amount"])
-    order = conn.execute("SELECT id, customer_id, total FROM orders WHERE id = ?", (order_id,)).fetchone()
+    order = conn.execute("SELECT id, customer_id, total, created_at FROM orders WHERE id = ?",
+                         (order_id,)).fetchone()
     if order is None:
         return ToolResult(False, error="not_found")
+    if profile.fix_v4 and order["customer_id"] != session.customer_id:
+        # FIX-V4: solo pedidos propios.
+        return ToolResult(False, error="forbidden")
+    if profile.fix_v1:
+        # FIX-V1: plazo, monto máximo y un reembolso por pedido, aplicados en el backend. Un
+        # reembolso pendiente de confirmación ya cuenta como el reembolso del pedido.
+        already = conn.execute(
+            "SELECT 1 FROM refunds WHERE order_id = ? AND status IN ('approved', 'pending_confirmation') LIMIT 1",
+            (order_id,),
+        ).fetchone() is not None
+        reason = check_refund_policy(dict(order), amount, already, now)
+        if reason is not None:
+            return ToolResult(False, error=reason)
     if profile.fix_v4:
-        # FIX-V4: solo pedidos propios, y el reembolso queda pendiente hasta que el cliente
-        # lo confirme con un botón de la UI (`confirm_refund`). El modelo no ve el token.
-        if order["customer_id"] != session.customer_id:
-            return ToolResult(False, error="forbidden")
+        # FIX-V4: el reembolso queda pendiente hasta que el cliente lo confirme con un botón
+        # de la UI (`confirm_refund`). El modelo no ve el token.
         token = secrets.token_urlsafe(24)
         with conn:
             cur = conn.execute(
                 "INSERT INTO refunds (order_id, requested_by, amount, status, token, created_at) "
                 "VALUES (?, ?, ?, 'pending_confirmation', ?, ?)",
-                (order_id, session.customer_id, amount, token, _now()),
+                (order_id, session.customer_id, amount, token, now.isoformat()),
             )
         return ToolResult(True, {"refund_id": cur.lastrowid, "order_id": order_id, "amount": amount,
                                  "status": "pending_confirmation",
@@ -197,17 +209,18 @@ def _issue_refund(args: dict, session: Session, conn: sqlite3.Connection, profil
                           confirmation_token=token)
     # VULN-V4: sin la corrección, no se verifica que el pedido sea del cliente de la sesión
     # ni se pide confirmación al usuario; el modelo decide solo.
-    # VULN-V1: las reglas de reembolso (plazo, monto máximo, uno por pedido) viven solo
+    # VULN-V1: sin la corrección, las reglas de reembolso (plazo, monto máximo, uno por pedido) viven solo
     # en el prompt; el backend aprueba lo que el modelo pida.
     with conn:
         cur = conn.execute(
             "INSERT INTO refunds (order_id, requested_by, amount, status, created_at) VALUES (?, ?, ?, 'approved', ?)",
-            (order_id, session.customer_id, amount, _now()),
+            (order_id, session.customer_id, amount, now.isoformat()),
         )
     return ToolResult(True, {"refund_id": cur.lastrowid, "order_id": order_id, "amount": amount, "status": "approved"})
 
 
-def _send_email(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile) -> ToolResult:
+def _send_email(args: dict, session: Session, conn: sqlite3.Connection, profile: SecurityProfile,
+                now: datetime) -> ToolResult:
     _check_keys(args, {"to", "subject", "body"})
     to = _email(args["to"])
     subject = _text(args["subject"], MAX_SUBJECT)
@@ -219,7 +232,7 @@ def _send_email(args: dict, session: Session, conn: sqlite3.Connection, profile:
     with conn:
         cur = conn.execute(
             "INSERT INTO emails (to_addr, subject, body, sent_by, created_at) VALUES (?, ?, ?, ?, ?)",
-            (to, subject, body, session.customer_id, _now()),
+            (to, subject, body, session.customer_id, now.isoformat()),
         )
     return ToolResult(True, {"email_id": cur.lastrowid, "to": to, "status": "sent"})
 
@@ -232,7 +245,8 @@ _HANDLERS = {
 
 
 def execute_tool(call: ToolCall, session: Session, conn: sqlite3.Connection,
-                 profile: SecurityProfile, allowed: frozenset[str] = ALL_TOOLS) -> ToolResult:
+                 profile: SecurityProfile, allowed: frozenset[str] = ALL_TOOLS,
+                 now: datetime | None = None) -> ToolResult:
     handler = _HANDLERS.get(call.name)
     if handler is None:
         return ToolResult(False, error="unknown_tool")
@@ -241,7 +255,7 @@ def execute_tool(call: ToolCall, session: Session, conn: sqlite3.Connection,
     if not isinstance(call.arguments, dict):
         return ToolResult(False, error="invalid_arguments")
     try:
-        return handler(call.arguments, session, conn, profile)
+        return handler(call.arguments, session, conn, profile, now or datetime.now(UTC))
     except _Invalid:
         return ToolResult(False, error="invalid_arguments")
 

@@ -18,7 +18,7 @@ def deps(conn):
 
     kb = KnowledgeBase(None, keyword_embed)
     kb.ingest_faq(KB_DIR)
-    return Deps(llm=ScriptedLLM(), kb=kb, conn=conn)
+    return Deps(llm=ScriptedLLM(), kb=kb, conn=conn, clock=lambda: NOW)
 
 
 @pytest.fixture

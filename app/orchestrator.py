@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 
 from app.config import SecurityProfile
+from app.guards import INPUT_BLOCKED_REPLY, OUTPUT_BLOCKED_REPLY, input_flagged, output_flagged
 from app.llm import LLMClient, ToolCall
 from app.prompts import build_messages
 from app.rag import Chunk, KnowledgeBase
@@ -42,6 +45,8 @@ class Deps:
     llm: LLMClient
     kb: KnowledgeBase
     conn: sqlite3.Connection
+    # Reloj para las reglas con plazo (FIX-V1). Los tests lo fijan para no depender de la fecha.
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
 
 def allowed_tools(chunks: list[Chunk], profile: SecurityProfile) -> frozenset[str]:
@@ -73,6 +78,9 @@ def _assistant_with_calls(content: str, calls: list[ToolCall]) -> dict:
 def handle_message(message: str, history: list[dict], session: Session,
                    deps: Deps, profile: SecurityProfile, seed: int) -> ChatResult:
     """Procesa un mensaje del cliente. `LLMUnavailable` se propaga: no es un ataque bloqueado."""
+    if profile.filters and input_flagged(message):
+        # Capa adicional (filters): un intento obvio de saltear las reglas no llega al modelo.
+        return ChatResult(INPUT_BLOCKED_REPLY)
     chunks = deps.kb.retrieve(message, k=RETRIEVE_K)
     messages = build_messages(history, message, chunks, session, profile)
     allowed = allowed_tools(chunks, profile)
@@ -83,10 +91,15 @@ def handle_message(message: str, history: list[dict], session: Session,
         last_round = round_ == MAX_TOOL_ROUNDS
         reply = deps.llm.chat(messages, [] if last_round else schemas, seed=seed)
         if not reply.tool_calls or last_round:
-            return ChatResult(reply.content.strip() or FALLBACK_REPLY, tool_log, _pending_token(tool_log))
+            text = reply.content.strip() or FALLBACK_REPLY
+            if profile.filters and output_flagged(text):
+                # Capa adicional (filters): una promesa de descuento solo existe como texto, así
+                # que el filtro de salida es lo único que la frena. Las herramientas ya se ejecutaron.
+                text = OUTPUT_BLOCKED_REPLY
+            return ChatResult(text, tool_log, _pending_token(tool_log))
         messages.append(_assistant_with_calls(reply.content, reply.tool_calls))
         for call in reply.tool_calls:
-            event = ToolEvent(call, execute_tool(call, session, deps.conn, profile, allowed))
+            event = ToolEvent(call, execute_tool(call, session, deps.conn, profile, allowed, deps.clock()))
             tool_log.append(event)
             messages.append(_tool_message(event))
 

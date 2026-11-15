@@ -21,8 +21,8 @@ x-model-env: &model-env
   LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-300}
 
 x-app: &app
-  build: .
-  image: asistente-llm-lab:dev
+  build: {context: ., target: app}
+  image: asistente-llm-lab:app
   restart: unless-stopped
   depends_on:
     ollama:
@@ -83,8 +83,9 @@ services:
       - data-segura:/data
 
   harness:
-    build: .
-    image: asistente-llm-lab:dev
+    # Imagen aparte: suma Chromium (oráculo de V5) y Node con promptfoo (tarea 15).
+    build: {context: ., target: harness}
+    image: asistente-llm-lab:harness
     profiles: [tools]
     depends_on:
       ollama:

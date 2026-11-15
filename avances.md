@@ -4,7 +4,7 @@
 **Fases trabajadas:** Fase A, sistema base (tareas 1 a 7), Fase B, arnés de medición (tareas 8 y 9), y Fase C:
 V1 a V5 (tareas 10 a 14), del [plan](docs/superpowers/plans/2026-11-04-asistente-llm-vulnerable.md).
 **Estado general:** las fases A, B y C están completas: **V1** a **V5** implementadas y validadas con el modelo
-real. Sigue la Fase D (tarea 15, medición final). `pytest -m "not llm"` → **385 passed** (con Chromium; sin
+real. Sigue la Fase D (tarea 15, medición final). `pytest -m "not llm"` → **387 passed** (con Chromium; sin
 navegador, 9 se saltean). El modelo es **`qwen2.5:3b`**.
 
 ## Fase C: V5, manejo inadecuado de la salida (tarea 14, 14 de noviembre)
@@ -67,10 +67,17 @@ lo bloquea todo.
 
 ### Limitaciones
 
-- **La imagen de Docker no tiene navegador.** Instala el paquete de Playwright (grupo `dev`), pero no Chromium:
-  ahí los 9 tests de navegador se saltean y los ataques de V5 quedan como `error`. Por ahora V5 se mide con el
-  arnés nativo. Para medirlo en Docker hay que agregar `playwright install --with-deps chromium` a la imagen del
-  arnés (unos 150 MB más), o una imagen aparte.
+- **Arnés en Docker (resuelto el 15 de noviembre):** el `Dockerfile` ahora tiene tres etapas: `base` (Python),
+  `harness` y `app` (la última, así `docker build .` sigue armando la app). El arnés suma Chromium headless con
+  sus bibliotecas (`playwright install --with-deps --only-shell chromium`, más `libatomic1`, que pide el node de
+  Playwright) y Node 22.23.3 (imagen fijada por digest) con **promptfoo 0.125.1**, con telemetría, generación
+  remota y chequeo de actualizaciones apagados por variables de entorno. Las apps no llevan nada de eso. Imágenes:
+  `asistente-llm-lab:harness` (3,3 GB) y `asistente-llm-lab:app` (1,3 GB). Dentro del arnés pasan los 20 tests
+  de V5 con el navegador; los de `test_compose.py` se saltean, porque la imagen no copia la configuración de
+  Docker (antes fallaban por eso). Una corrida de la batería de V5 desde el contenedor contra el Ollama nativo
+  dio lo esperado (3 de 3 éxitos en `vulnerable`, 0 de 3 en `segura`), pero entre 27 y 255 s por caso, contra
+  unos 10 s nativo: la máquina estaba sin RAM libre por la imagen recién descomprimida, y la latencia bajó
+  durante la corrida. Hay que repetirla antes de decidir dónde se hace la medición final.
 - El oráculo solo detecta `alert`, `confirm` o `prompt` (un `dialog`). Un payload que roba la cookie sin abrir un
   diálogo no cuenta. Para la batería alcanza, porque todos usan `alert(1)`.
 - La UI de prueba responde `/api/chat` con la respuesta ya generada: mide el render, no el camino completo por
@@ -818,7 +825,8 @@ python -m uv sync
 python -m uv run pytest
 ```
 
-Resultado esperado: `385 passed, 2 deselected` (sin Chromium, `376 passed, 9 skipped`).
+Resultado esperado: `387 passed, 2 deselected` (sin Chromium, `378 passed, 9 skipped`). Dentro de la imagen
+del arnés: `369 passed, 18 skipped`.
 
 ## Archivos creados
 

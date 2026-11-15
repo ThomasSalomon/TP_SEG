@@ -251,6 +251,12 @@ docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml run --rm 
 No hace falta cambiar `OLLAMA_HOST` ni el firewall: Docker Desktop llega al Ollama del host aunque escuche
 solo en `127.0.0.1`.
 
+La primera vez que se usa `harness`, Compose arma su imagen (`asistente-llm-lab:harness`, unos 3,3 GB):
+además de lo de las apps trae Chromium para el oráculo de V5 y Node 22 con promptfoo para la tarea 15. Tarda
+varios minutos y necesita Internet. Mientras la descomprime, la máquina queda sin RAM libre y el modelo se
+pone lento (se vio el 15 de noviembre); conviene no medir hasta que termine. Las apps usan otra imagen, más
+liviana (`asistente-llm-lab:app`).
+
 ### Opción B (16 GB de RAM o más, o GPU): todo dentro de Docker
 
 > Con 8 GB de RAM **no funciona**: el modelo dentro de la VM de Docker se corta por timeout (ver

@@ -5,6 +5,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# La imagen del arnés no copia la configuración de Docker: ahí estos tests no tienen qué revisar.
+pytestmark = pytest.mark.skipif(not (ROOT / "docker-compose.yml").exists() or not (ROOT / "Dockerfile").exists(),
+                                reason="fuera del repositorio (p. ej. dentro de la imagen del arnés)")
+
 
 @pytest.fixture(scope="module")
 def compose():
@@ -68,3 +72,19 @@ def test_ollama_procesa_un_pedido_a_la_vez(compose):
 def test_ollama_comparte_volumen_de_modelos_con_init(compose):
     vol = lambda s: {v.split(":")[0] for v in compose["services"][s]["volumes"]}  # noqa: E731
     assert vol("ollama") & vol("ollama-init")
+
+
+def test_apps_y_harness_usan_su_etapa_del_dockerfile(compose):
+    # Las apps no llevan navegador ni Node; el arnés sí (V5 y promptfoo).
+    for name in ("app-vulnerable", "app-segura"):
+        assert compose["services"][name]["build"]["target"] == "app"
+    h = compose["services"]["harness"]
+    assert h["build"]["target"] == "harness"
+    assert h["image"] != compose["services"]["app-vulnerable"]["image"]
+
+
+def test_dockerfile_tiene_las_etapas_y_la_app_va_ultima():
+    stages = [line.split()[-1] for line in (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
+              if line.startswith("FROM ")]
+    assert {"base", "harness", "app"} <= set(stages)
+    assert stages[-1] == "app"  # `docker build .` sin --target arma la app

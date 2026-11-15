@@ -1074,6 +1074,9 @@ def test_ui_segura_funciona_con_csp(live_app, page):
 
 # Fase D: resultados y entregables
 
+> 🚩 **Estado al 15 de noviembre de 2026:** las tareas 1 a 14 están hechas. Se sigue desde acá; la lista
+> detallada de lo que falta está en [avances.md](../../../avances.md), en "Seguir desde acá".
+
 ### Tarea 15: Congelar la batería, medir y escanear
 
 **Archivos:** crear `attacks/battery/utility.yaml`, `attacks/battery/heldout.yaml`, `attacks/promptfoo/promptfooconfig.yaml`, `results/final/*`, `results/final/promptfoo-triage.md`, `tests/test_battery.py`.

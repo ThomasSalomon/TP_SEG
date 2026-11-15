@@ -7,6 +7,53 @@ V1 a V5 (tareas 10 a 14), del [plan](docs/superpowers/plans/2026-11-04-asistente
 real. Sigue la Fase D (tarea 15, medición final). `pytest -m "not llm"` → **387 passed** (con Chromium; sin
 navegador, 9 se saltean). El modelo es **`qwen2.5:3b`**.
 
+## 🚩 Seguir desde acá (15 de noviembre)
+
+Hechas las tareas 1 a 14 del plan (fases A, B y C). En la rama `feat/v2-inyeccion-indirecta` están V1 a V5 y la
+imagen del arnés con Chromium y promptfoo; `main` tiene hasta la Fase B. Lo que sigue, en orden:
+
+1. **Pendientes de la revisión del arnés, antes de congelar** (detalle en "Revisión del arnés"):
+   - [ ] Validar los `args` de cada oráculo al cargar la batería (`values` como texto da falsos positivos).
+   - [ ] Que el `git_sha` corresponda al código: rechazar la corrida si el árbol tiene cambios, o reconstruir la
+     imagen con `--build`.
+   - [ ] Registrar `num_ctx`, `num_predict`, el modelo de embeddings y la versión de Ollama, y controlarlos en
+     `--strict`.
+   - [ ] Opcionales: los hallazgos menores de esa misma lista.
+2. [ ] **Elegir dónde se mide.** Repetir con la máquina descansada la corrida de V5 desde el contenedor
+   (`docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml run --rm harness ...`). El 15 de
+   noviembre tardó entre 27 y 255 s por caso, contra unos 10 s nativo. Si sigue lento, medir con el arnés
+   nativo y documentarlo.
+3. **Tarea 15, congelar y medir:**
+   - [ ] `tests/test_battery.py`: al menos 3 ataques `dev` por vulnerabilidad (ya están), uno `heldout` por
+     vulnerabilidad y 8 tareas de utilidad.
+   - [ ] `attacks/battery/utility.yaml`: FAQ, consultar el pedido propio, reembolso legítimo (con
+     `confirm_pending`), opinar sobre reseñas sin veneno. Oráculos `reply_contains_any` y `tool_succeeded`.
+     Probarla también en `segura`: tiene que seguir funcionando con las correcciones.
+   - [ ] `attacks/battery/heldout.yaml`: 5 ataques; cada integrante escribe el de una vulnerabilidad que no
+     trabajó, sin mirar antes sus filtros.
+   - [ ] Congelar: commit `test: freeze attack battery` y tag `battery-v1`. Desde ahí no se cambian ni la batería,
+     ni las correcciones, ni los parámetros.
+   - [ ] Medición obligatoria: `vulnerable` y `segura`, 50 repeticiones, en `results/final/main.jsonl`, con
+     `GIT_SHA` definido. Son unos 28 ataques × 2 perfiles × 50 = 2.800 casos: a unos 10 s por caso, **unas 8 horas**
+     (V3-A1 tarda el doble). Se retoma si se corta.
+   - [ ] Si alcanza el tiempo: `solo_vN` contra su batería y `solo_filtros` contra V1 y V2 (mínimo 20
+     repeticiones). Los controles de la Fase C muestran que valen la pena, sobre todo `solo_filtros` en V5.
+   - [ ] `python -m attacks.report results/final/main.jsonl --strict --min-valid 50 --out results/final/`.
+   - [ ] promptfoo (0.125.1, ya en la imagen del arnés): `attacks/promptfoo/promptfooconfig.yaml` contra
+     `app-vulnerable` y `app-segura`, `redteam.provider` en Ollama, desde la red interna. Anotar los plugins que
+     solo funcionan en remoto. Clasificar los hallazgos a mano en `results/final/promptfoo-triage.md`.
+4. [ ] **Tarea 16, informe:** `docs/informe/` con las seis secciones por vulnerabilidad y las tablas copiadas de
+   `summary.md`. Usar como fuente las secciones de la Fase C de este archivo (cambios respecto del plan,
+   validación, controles y limitaciones).
+5. [ ] **Tarea 17, demo:** `DEMO_SEED`, `scripts/demo_seed.py`, guion y ensayo sin Internet.
+6. [ ] **Tarea 18 (opcional), LLM06:** había que decidirla antes de congelar y no se decidió. Si no se hace,
+   declararlo en las limitaciones del informe.
+7. **Mantenimiento:**
+   - [ ] Abrir un PR de `feat/v2-inyeccion-indirecta` a `main`. El nombre de la rama ya no describe lo que tiene
+     (V1 a V5 y el arnés).
+   - [ ] Con la variante de poca RAM no hace falta el contenedor `tp_seg-ollama-1`: si queda levantado junto con el
+     Ollama nativo, compiten por la RAM.
+
 ## Fase C: V5, manejo inadecuado de la salida (tarea 14, 14 de noviembre)
 
 **Estado:** pasos 1 a 5 del plan hechos. Falta el paso 6, el commit (`feat(v5): encode model output and add CSP`).
@@ -744,17 +791,8 @@ consistente y una tabla de problemas frecuentes.
 
 1. ~~Fijar la imagen base de Python~~ ✅ Fijada el 11 de noviembre a `python:3.12-slim@sha256:5e2bdb1b…`
    (Python 3.12.16). La imagen `ollama/ollama:0.40.15` ya se descargó y funciona.
-2. **Commits:** el plan pide un commit por tarea. La fase A ya está en `origin/main` (commit `adb471b`); la
-   fase B, la elección del modelo y la guía de instalación no están commiteadas. Mensajes sugeridos:
-   - `feat: add security profiles and LLM client`
-   - `docs: record model selection` (cuando se complete la tarea 2)
-   - `feat: add orders database and vulnerable tools`
-   - `feat: add knowledge base with unvalidated ingestion`
-   - `feat: add prompts and tool-calling orchestrator`
-   - `feat: add chat API and web interface`
-   - `feat: add docker compose lab environment`
-   - `feat: add attack battery runner and oracle registry`
-   - `feat: add statistical report for attack results`
+2. ~~**Commits** de las fases A y B~~ ✅ Están en `main`. La Fase C está en la rama `feat/v2-inyeccion-indirecta`,
+   con un commit por vulnerabilidad.
 3. ~~**Decisión D1:** asignar los `[Integrante N]` de la sección 3 del plan.~~ **Descartada (11 nov):** no se
    asigna una vulnerabilidad por persona; la Fase C se trabaja en equipo.
 

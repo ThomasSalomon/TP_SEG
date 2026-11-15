@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import re
+import secrets
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -30,6 +31,9 @@ class ToolResult:
     ok: bool
     data: dict = field(default_factory=dict)
     error: str | None = None
+    # FIX-V4: token de confirmación de un reembolso pendiente. Va a la UI, nunca al modelo:
+    # el orquestador solo le manda `ok`, `data` y `error`.
+    confirmation_token: str | None = field(default=None, repr=False)
 
 
 TOOL_SCHEMAS: list[dict] = [
@@ -150,8 +154,12 @@ def _get_order(args: dict, session: Session, conn: sqlite3.Connection, profile: 
     ).fetchone()
     if row is None:
         return ToolResult(False, error="not_found")
-    # VULN-V4: no se verifica que el pedido pertenezca al cliente de la sesión; el modelo
-    # puede leer pedidos ajenos, incluidos nombre, email y dirección de otro cliente.
+    if profile.fix_v4 and row["customer_id"] != session.customer_id:
+        # FIX-V4: solo pedidos del cliente de la sesión. La identidad sale de `Session`,
+        # nunca de lo que diga el modelo o el cliente en el chat.
+        return ToolResult(False, error="forbidden")
+    # VULN-V4: sin la corrección, no se verifica que el pedido pertenezca al cliente de la
+    # sesión; el modelo puede leer pedidos ajenos, incluidos nombre, email y dirección.
     return ToolResult(True, {
         "order_id": row["id"],
         "status": row["status"],
@@ -171,8 +179,24 @@ def _issue_refund(args: dict, session: Session, conn: sqlite3.Connection, profil
     order = conn.execute("SELECT id, customer_id, total FROM orders WHERE id = ?", (order_id,)).fetchone()
     if order is None:
         return ToolResult(False, error="not_found")
-    # VULN-V4: no se verifica que el pedido sea del cliente de la sesión ni se pide
-    # confirmación al usuario; el modelo decide solo.
+    if profile.fix_v4:
+        # FIX-V4: solo pedidos propios, y el reembolso queda pendiente hasta que el cliente
+        # lo confirme con un botón de la UI (`confirm_refund`). El modelo no ve el token.
+        if order["customer_id"] != session.customer_id:
+            return ToolResult(False, error="forbidden")
+        token = secrets.token_urlsafe(24)
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO refunds (order_id, requested_by, amount, status, token, created_at) "
+                "VALUES (?, ?, ?, 'pending_confirmation', ?, ?)",
+                (order_id, session.customer_id, amount, token, _now()),
+            )
+        return ToolResult(True, {"refund_id": cur.lastrowid, "order_id": order_id, "amount": amount,
+                                 "status": "pending_confirmation",
+                                 "next_step": "El cliente tiene que confirmarlo con el botón de la pantalla."},
+                          confirmation_token=token)
+    # VULN-V4: sin la corrección, no se verifica que el pedido sea del cliente de la sesión
+    # ni se pide confirmación al usuario; el modelo decide solo.
     # VULN-V1: las reglas de reembolso (plazo, monto máximo, uno por pedido) viven solo
     # en el prompt; el backend aprueba lo que el modelo pida.
     with conn:
@@ -188,7 +212,10 @@ def _send_email(args: dict, session: Session, conn: sqlite3.Connection, profile:
     to = _email(args["to"])
     subject = _text(args["subject"], MAX_SUBJECT)
     body = _text(args["body"], MAX_BODY)
-    # VULN-V4: se puede enviar a cualquier destinatario, no solo al cliente de la sesión.
+    if profile.fix_v4 and to.casefold() != session.email.casefold():
+        # FIX-V4: el asistente solo le escribe al cliente de la sesión.
+        return ToolResult(False, error="forbidden")
+    # VULN-V4: sin la corrección, se puede enviar a cualquier destinatario.
     with conn:
         cur = conn.execute(
             "INSERT INTO emails (to_addr, subject, body, sent_by, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -217,3 +244,30 @@ def execute_tool(call: ToolCall, session: Session, conn: sqlite3.Connection,
         return handler(call.arguments, session, conn, profile)
     except _Invalid:
         return ToolResult(False, error="invalid_arguments")
+
+
+def confirm_refund(token: object, session: Session, conn: sqlite3.Connection) -> ToolResult:
+    """Aprueba un reembolso pendiente. Lo llama la UI (`POST /api/tools/confirm`), nunca el modelo.
+
+    FIX-V4: el token es de un solo uso y solo sirve en la sesión del cliente que pidió el
+    reembolso y es dueño del pedido.
+    """
+    if not isinstance(token, str) or not token:
+        return ToolResult(False, error="invalid_token")
+    row = conn.execute(
+        """SELECT r.id, r.order_id, r.amount FROM refunds r JOIN orders o ON o.id = r.order_id
+           WHERE r.token = ? AND r.status = 'pending_confirmation'
+             AND r.requested_by = ? AND o.customer_id = ?""",
+        (token, session.customer_id, session.customer_id),
+    ).fetchone()
+    if row is None:
+        return ToolResult(False, error="invalid_token")
+    with conn:
+        cur = conn.execute(
+            "UPDATE refunds SET status = 'approved', token = NULL WHERE id = ? AND status = 'pending_confirmation'",
+            (row["id"],),
+        )
+    if cur.rowcount != 1:  # otro pedido lo confirmó en el medio
+        return ToolResult(False, error="invalid_token")
+    return ToolResult(True, {"refund_id": row["id"], "order_id": row["order_id"], "amount": row["amount"],
+                             "status": "approved"})

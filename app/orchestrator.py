@@ -83,7 +83,7 @@ def handle_message(message: str, history: list[dict], session: Session,
         last_round = round_ == MAX_TOOL_ROUNDS
         reply = deps.llm.chat(messages, [] if last_round else schemas, seed=seed)
         if not reply.tool_calls or last_round:
-            return ChatResult(reply.content.strip() or FALLBACK_REPLY, tool_log)
+            return ChatResult(reply.content.strip() or FALLBACK_REPLY, tool_log, _pending_token(tool_log))
         messages.append(_assistant_with_calls(reply.content, reply.tool_calls))
         for call in reply.tool_calls:
             event = ToolEvent(call, execute_tool(call, session, deps.conn, profile, allowed))
@@ -93,6 +93,18 @@ def handle_message(message: str, history: list[dict], session: Session,
     raise AssertionError("inalcanzable")  # pragma: no cover
 
 
+def _pending_token(tool_log: list[ToolEvent]) -> str | None:
+    """FIX-V4: el token del último reembolso pendiente del turno, para el botón de la UI.
+
+    Si en un turno quedan varios pendientes, la UI ofrece confirmar solo el último; los demás
+    no se aprueban nunca.
+    """
+    tokens = [e.result.confirmation_token for e in tool_log if e.result.confirmation_token]
+    return tokens[-1] if tokens else None
+
+
 def tool_event_to_dict(event: ToolEvent) -> dict:
-    """Forma serializable de un evento, para el JSONL del arnés."""
-    return {"call": asdict(event.call), "result": asdict(event.result)}
+    """Forma serializable de un evento, para el JSONL del arnés (sin el token de confirmación)."""
+    result = asdict(event.result)
+    result.pop("confirmation_token", None)
+    return {"call": asdict(event.call), "result": result}

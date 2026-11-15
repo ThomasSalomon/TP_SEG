@@ -29,7 +29,7 @@ from app.db import connect, init_db, verify_password
 from app.llm import LLMUnavailable, OllamaClient
 from app.orchestrator import Deps, handle_message
 from app.rag import KnowledgeBase
-from app.tools import Session
+from app.tools import Session, confirm_refund
 
 log = logging.getLogger("asistente")
 
@@ -57,6 +57,10 @@ class ChatIn(BaseModel):
 
 class ReviewIn(BaseModel):
     text: StrictStr
+
+
+class ConfirmIn(BaseModel):
+    token: StrictStr
 
 
 @dataclass
@@ -134,6 +138,20 @@ def create_app(profile: SecurityProfile, deps: Deps) -> FastAPI:
             raise HTTPException(status_code=503, detail="El asistente no está disponible en este momento") from None
         conv.history += [{"role": "user", "content": body.message}, {"role": "assistant", "content": result.reply}]
         return {"reply": result.reply, "pending_confirmation": result.pending_confirmation}
+
+    @app.post("/api/tools/confirm")
+    def confirm(body: ConfirmIn, auth: tuple[str, Conversation] = Depends(current)):
+        # FIX-V4: la única forma de aprobar un reembolso pendiente es esta ruta, que la UI
+        # llama desde un botón. No pasa por el modelo, así que una inyección no la alcanza.
+        _, conv = auth
+        with work_lock:
+            r = confirm_refund(body.token, conv.session, deps.conn)
+        if r.ok:
+            # Para que el asistente sepa en el próximo turno que el reembolso ya se aprobó.
+            conv.history.append({"role": "assistant", "content":
+                                 f"(El cliente confirmó el reembolso de {r.data['amount']} del pedido "
+                                 f"{r.data['order_id']} y quedó aprobado.)"})
+        return {"ok": r.ok, "error": r.error}
 
     @app.post("/api/reviews")
     def add_review(body: ReviewIn, auth: tuple[str, Conversation] = Depends(current)):

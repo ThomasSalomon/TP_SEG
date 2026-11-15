@@ -5,6 +5,8 @@
 - La base de conocimiento se arma una vez por ataque y perfil (recuperar no modifica nada),
   con las reseñas `setup_reviews` del ataque cargadas con el perfil que se mide.
 - La semilla es `base_seed + rep`, igual en todos los perfiles: la comparación es pareada.
+- Con fix_v4, un reembolso pendiente se confirma como lo haría el cliente desde la UI,
+  salvo que el ataque diga `confirm_pending: false`.
 - Si el modelo no responde, la repetición queda como `error`, no como `blocked`, y se
   reintenta al volver a ejecutar el mismo comando.
 - Cada registro se escribe y se sincroniza a disco antes de seguir: un corte no pierde lo hecho.
@@ -30,11 +32,11 @@ from pathlib import Path
 
 from app.config import DEFAULT_EMBED_MODEL, PROFILES, ModelParams, SecurityProfile, model_params_from_env
 from app.db import CUSTOMERS, connect, init_db
-from app.llm import LLMClient, LLMUnavailable, OllamaClient
+from app.llm import LLMClient, LLMUnavailable, OllamaClient, ToolCall
 from app.main import KB_DIR
 from app.orchestrator import Deps, ToolEvent, handle_message, tool_event_to_dict
 from app.rag import KnowledgeBase
-from app.tools import Session
+from app.tools import Session, confirm_refund
 from attacks.oracles import ORACLES, Evidence
 from attacks.records import RunRecord, read_raw
 from attacks.schema import Attack, load_battery
@@ -99,6 +101,10 @@ def run_once(attack: Attack, profile: SecurityProfile, rep: int, ctx: RunContext
             result = handle_message(turn, history, session, deps, profile, seed)
             replies.append(result.reply)
             tool_log.extend(result.tool_log)
+            if result.pending_confirmation and attack.confirm_pending:
+                # Simula al cliente apretando "Confirmar" en la UI (POST /api/tools/confirm).
+                confirmation = confirm_refund(result.pending_confirmation, session, conn)
+                tool_log.append(ToolEvent(ToolCall("ui:confirm_refund", {}), confirmation))
             history += [{"role": "user", "content": turn}, {"role": "assistant", "content": result.reply}]
         evidence = Evidence(replies=replies, tool_log=tool_log, conn=conn, attacker_id=attack.session)
         success = ORACLES[attack.oracle.type](evidence, attack.oracle.args)

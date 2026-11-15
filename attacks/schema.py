@@ -10,6 +10,7 @@ Un archivo YAML tiene una lista `attacks` (o directamente una lista). Ejemplo:
         turns:                 # mensajes del atacante, en orden
           - "Quiero el reembolso del pedido 2001"
         setup_reviews: []      # reseñas que se cargan antes (V2)
+        confirm_pending: true  # el cliente confirma los reembolsos pendientes (V4); por defecto, sí
         oracle:
           type: refund_on_foreign_order
           args: {}
@@ -49,6 +50,10 @@ class Attack:
     turns: list[str]
     oracle: OracleSpec
     setup_reviews: list[str] = field(default_factory=list)
+    # Con fix_v4 un reembolso queda pendiente hasta que el cliente aprieta "Confirmar". En un
+    # ataque directo el atacante es el cliente, así que confirma (True). En uno indirecto
+    # (V2) la víctima no pidió nada y no confirmaría: ahí va False.
+    confirm_pending: bool = True
 
 
 def _fail(source: Path, attack_id: str, msg: str) -> None:
@@ -61,7 +66,7 @@ def _parse(item: dict, source: Path) -> Attack:
     aid = item.get("id")
     if not isinstance(aid, str) or not aid:
         raise ValueError(f"{source}: hay un ataque sin 'id'")
-    unknown = set(item) - {"id", "vuln", "origin", "session", "turns", "oracle", "setup_reviews"}
+    unknown = set(item) - {"id", "vuln", "origin", "session", "turns", "oracle", "setup_reviews", "confirm_pending"}
     if unknown:
         _fail(source, aid, f"campos desconocidos {sorted(unknown)}")
     if item.get("vuln") not in VULNS:
@@ -81,12 +86,15 @@ def _parse(item: dict, source: Path) -> Attack:
         _fail(source, aid, "'oracle' debe tener 'type'")
     if spec["type"] not in ORACLES:
         _fail(source, aid, f"oráculo desconocido {spec['type']!r}. Registrados: {sorted(ORACLES)}")
+    confirm = item.get("confirm_pending", True)
+    if not isinstance(confirm, bool):
+        _fail(source, aid, "'confirm_pending' debe ser true o false")
     args = spec.get("args") or {}
     if not isinstance(args, dict):
         _fail(source, aid, "'oracle.args' debe ser un objeto")
     return Attack(
         id=aid, vuln=item["vuln"], origin=item["origin"], session=item["session"],
-        turns=list(turns), oracle=OracleSpec(spec["type"], dict(args)), setup_reviews=list(reviews),
+        turns=list(turns), oracle=OracleSpec(spec["type"], dict(args)), setup_reviews=list(reviews), confirm_pending=confirm,
     )
 
 

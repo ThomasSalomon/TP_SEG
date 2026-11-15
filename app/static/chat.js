@@ -32,6 +32,24 @@ function addMessage(role, content) {
   return el;
 }
 
+// FIX-V4: un reembolso solo se aprueba si el cliente aprieta este botón. El token viaja de
+// la API a la ruta de confirmación sin pasar por el modelo ni mostrarse en pantalla.
+function addConfirmation(token) {
+  const box = addMessage("system", "Hay un reembolso esperando tu confirmación. ");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Confirmar reembolso";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    const r = await api("/api/tools/confirm", { token });
+    if (r.status === 401) { showLogin(); return; }
+    box.textContent = r.ok && r.data && r.data.ok
+      ? "Reembolso confirmado."
+      : "No se pudo confirmar el reembolso (puede que ya estuviera confirmado).";
+  }, { once: true });
+  box.appendChild(button);
+}
+
 function showChat(customerId) {
   $("login-view").hidden = true;
   $("chat-view").hidden = false;
@@ -82,6 +100,7 @@ $("chat-form").addEventListener("submit", async (ev) => {
     if (r.status === 503) { addMessage("system", "El asistente no está disponible. Probá de nuevo en un rato."); return; }
     if (!r.ok) { addMessage("system", "No se pudo enviar el mensaje."); return; }
     addMessage("assistant", r.data.reply);
+    if (r.data.pending_confirmation) addConfirmation(r.data.pending_confirmation);
   } finally {
     button.disabled = false;
     input.focus();

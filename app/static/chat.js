@@ -25,6 +25,7 @@ function addMessage(role, content) {
     // <img onerror=...> en la salida del modelo se ejecuta en el navegador del cliente.
     el.innerHTML = content;
   } else {
+    // FIX-V5: con render_mode "text" (y antes de saber el modo) todo se muestra como texto.
     el.textContent = content;
   }
   $("messages").appendChild(el);

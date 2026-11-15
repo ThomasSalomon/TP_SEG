@@ -173,7 +173,7 @@ corrección con `# FIX-Vn`.
 | V2 Inyección indirecta | LLM01 / LLM09 | `app/rag.py` (ingesta sin validar), `app/prompts.py` (contexto sin delimitar), `app/orchestrator.py` (todas las herramientas con una reseña en el contexto). Corrección: `allowed_tools` en `app/orchestrator.py`, `app/ingest.py` |
 | V3 Exposición del contexto oculto | LLM08 / LLM02 | `app/prompts.py` (código y regla interna en el system prompt). Corrección: con `fix_v3` los secretos no entran en el contexto del modelo; filtro literal de salida como capa adicional |
 | V4 Agencia excesiva | LLM03 | `app/tools.py` (sin autorización por sesión ni confirmación). Corrección: pedidos y emails solo del cliente de la sesión, y reembolsos pendientes hasta que el cliente los confirma desde la UI (`POST /api/tools/confirm`) |
-| V5 Salida sin codificar | LLM10 | `app/static/chat.js` (`innerHTML`), `app/main.py` |
+| V5 Salida sin codificar | LLM10 | `app/static/chat.js` (`innerHTML`), `app/main.py`. Corrección: la UI muestra la respuesta con `textContent` y la app manda una CSP sin `unsafe-inline` (capa independiente); el oráculo `xss_executed` la prueba en Chromium con Playwright (`attacks/xss.py`) |
 
 ## Limitaciones conocidas del entorno
 

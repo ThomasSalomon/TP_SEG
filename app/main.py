@@ -37,6 +37,12 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 KB_DIR = Path(__file__).resolve().parent.parent / "data" / "kb"
 SESSION_COOKIE = "session"
 MAX_HISTORY_MESSAGES = 20
+# FIX-V5 (capa independiente de la codificación): aunque una respuesta llegara a insertarse
+# como HTML, el navegador no ejecuta handlers inline ni scripts de otro origen.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
 
 
 class LoginIn(BaseModel):
@@ -97,6 +103,14 @@ def create_app(profile: SecurityProfile, deps: Deps) -> FastAPI:
     # La conexión SQLite y la colección de Chroma se comparten entre hilos: se serializa
     # el trabajo. Con un solo modelo local tampoco hay paralelismo real que ganar.
     work_lock = threading.Lock()
+
+    if profile.fix_v5:
+        @app.middleware("http")
+        async def content_security_policy(request, call_next):
+            # FIX-V5: CSP en todas las respuestas. VULN-V5: sin la corrección, no hay CSP.
+            response = await call_next(request)
+            response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+            return response
 
     def current(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)) -> tuple[str, Conversation]:
         conv = sessions.get(session)

@@ -5,6 +5,8 @@
 - La base de conocimiento se arma una vez por ataque y perfil (recuperar no modifica nada),
   con las reseñas `setup_reviews` del ataque cargadas con el perfil que se mide.
 - La semilla es `base_seed + rep`, igual en todos los perfiles: la comparación es pareada.
+- Solo si la batería usa el oráculo `xss_executed` (V5) se abre Chromium y se levanta la UI
+  real de cada perfil, para mostrar ahí las respuestas del modelo.
 - Con fix_v4, un reembolso pendiente se confirma como lo haría el cliente desde la UI,
   salvo que el ataque diga `confirm_pending: false`.
 - Si el modelo no responde, la repetición queda como `error`, no como `blocked`, y se
@@ -19,6 +21,7 @@ Uso (dentro de la red del laboratorio):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 import tempfile
@@ -54,6 +57,8 @@ class RunContext:
     model_digest: str
     git_sha: str
     workdir: Path
+    # Muestra una respuesta en la UI del perfil y dice si se ejecutó JavaScript (V5).
+    render: Callable[[SecurityProfile, str], bool] | None = None
     # Bases de conocimiento ya armadas, por (ataque, perfil). Es estado interno del runner.
     _kb_cache: dict = field(default_factory=dict, compare=False, repr=False)
 
@@ -106,7 +111,9 @@ def run_once(attack: Attack, profile: SecurityProfile, rep: int, ctx: RunContext
                 confirmation = confirm_refund(result.pending_confirmation, session, conn)
                 tool_log.append(ToolEvent(ToolCall("ui:confirm_refund", {}), confirmation))
             history += [{"role": "user", "content": turn}, {"role": "assistant", "content": result.reply}]
-        evidence = Evidence(replies=replies, tool_log=tool_log, conn=conn, attacker_id=attack.session)
+        render = (lambda reply: ctx.render(profile, reply)) if ctx.render else None
+        evidence = Evidence(replies=replies, tool_log=tool_log, conn=conn, attacker_id=attack.session,
+                            render=render)
         success = ORACLES[attack.oracle.type](evidence, attack.oracle.args)
         return _record(attack, profile, rep, seed, ctx, "success" if success else "blocked", None,
                        t0, replies, tool_log)
@@ -191,9 +198,14 @@ def main(argv: list[str] | None = None) -> int:
     if git_sha == "unknown":
         print("Aviso: GIT_SHA no está definido; los registros quedan con git_sha=unknown "
               "y el resumen --strict los va a rechazar.", file=sys.stderr)
-    with tempfile.TemporaryDirectory(prefix="runner-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="runner-") as tmp, contextlib.ExitStack() as stack:
+        render = None
+        if any(a.oracle.type == "xss_executed" for a in attacks):
+            from attacks.xss import XssRenderer  # importa Playwright solo si hace falta
+
+            render = stack.enter_context(XssRenderer())
         ctx = RunContext(llm=llm, embed=llm.embed, params=params, model_digest=digest,
-                         git_sha=git_sha, workdir=Path(tmp))
+                         git_sha=git_sha, workdir=Path(tmp), render=render)
         run_battery(attacks, args.profiles, args.reps, ctx, args.out)
     return 0
 
